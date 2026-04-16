@@ -1,0 +1,44 @@
+services:
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "5000:5000"
+    volumes:
+      - library-data:/library
+      - sqlite-data:/data
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - LIBRARY_PATH=/library
+      - SQLITE_PATH=/data/knowledge-engine.db
+      - AGENT_HOST=agent
+      - AGENT_PORT=3001
+    depends_on:
+      - agent
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:5173"
+    environment:
+      - PUBLIC_API_BASE=http://localhost:5000
+    depends_on:
+      - api
+
+  agent:
+    build:
+      context: ./agent
+      dockerfile: Dockerfile
+    volumes:
+      - library-data:/library:ro
+      - ./skills:/skills:ro
+    environment:
+      - PI_CWD=/library
+    # No port mapping needed — api talks to agent internally
+
+volumes:
+  library-data:
+  sqlite-data:

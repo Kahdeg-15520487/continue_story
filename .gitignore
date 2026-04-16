@@ -1,0 +1,30 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+
+# Node
+node_modules/
+dist/
+build/
+.svelte-kit/
+
+# IDE
+.vscode/
+.idea/
+
+# Environment
+.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# SQLite
+*.db
+*.db-journal
+
+# Library (user data)
+library/*
+!library/.gitkeep
