@@ -3,6 +3,7 @@ using Hangfire.SQLite;
 using Microsoft.EntityFrameworkCore;
 using KnowledgeEngine.Api.Data;
 using KnowledgeEngine.Api.Endpoints;
+using KnowledgeEngine.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -14,6 +15,10 @@ builder.Services.AddHangfire(config => config
     .UseRecommendedSerializerSettings()
     .UseSQLiteStorage(builder.Configuration.GetConnectionString("Default")));
 builder.Services.AddHangfireServer();
+
+// Conversion service
+builder.Services.AddSingleton<IConversionService, ConversionService>();
+builder.Services.AddTransient<ConversionJobService>();
 
 builder.Services.AddCors(options =>
 {
@@ -37,6 +42,7 @@ app.MapGet("/api/health", () => Results.Ok(new { status = "healthy", timestamp =
 
 LibraryEndpoints.Map(app);
 EditorEndpoints.Map(app);
+ConversionEndpoints.Map(app);
 
 app.UseHangfireDashboard();
 

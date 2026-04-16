@@ -11,7 +11,7 @@ public class ConversionService : IConversionService
         _logger = logger;
     }
 
-    public async Task<string> ConvertToMarkdownAsync(string inputPath, string outputPath, CancellationToken ct = default)
+    public async Task<string> ConvertToMarkdownAsync(string inputPath, string outputPath)
     {
         if (!File.Exists(inputPath))
             throw new FileNotFoundException($"Input file not found: {inputPath}");
@@ -33,10 +33,10 @@ public class ConversionService : IConversionService
 
         process.Start();
 
-        var output = await process.StandardOutput.ReadToEndAsync(ct);
-        var error = await process.StandardError.ReadToEndAsync(ct);
+        var output = await process.StandardOutput.ReadToEndAsync();
+        var error = await process.StandardError.ReadToEndAsync();
 
-        await process.WaitForExitAsync(ct);
+        await process.WaitForExitAsync();
 
         if (process.ExitCode != 0)
         {
@@ -44,7 +44,7 @@ public class ConversionService : IConversionService
             throw new InvalidOperationException($"markitdown conversion failed: {error}");
         }
 
-        await File.WriteAllTextAsync(outputPath, output, ct);
+        await File.WriteAllTextAsync(outputPath, output);
 
         _logger.LogInformation("Conversion complete: {Output} ({Length} chars)", outputPath, output.Length);
         return outputPath;
