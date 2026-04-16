@@ -36,6 +36,7 @@ app.UseCors("Frontend");
 app.MapGet("/api/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }));
 
 LibraryEndpoints.Map(app);
+EditorEndpoints.Map(app);
 
 app.UseHangfireDashboard();
 

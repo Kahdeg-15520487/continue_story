@@ -10,7 +10,6 @@ public static class LibraryEndpoints
     {
         var group = app.MapGroup("/api/books");
 
-        // List all books
         group.MapGet("/", async (AppDbContext db) =>
         {
             var books = await db.Books
@@ -20,14 +19,12 @@ public static class LibraryEndpoints
             return Results.Ok(books);
         });
 
-        // Get single book by slug
         group.MapGet("/{slug}", async (string slug, AppDbContext db) =>
         {
             var book = await db.Books.FirstOrDefaultAsync(b => b.Slug == slug);
             return book is null ? Results.NotFound() : Results.Ok(new BookDetailDto(book));
         });
 
-        // Create a new book entry (folder will be created by conversion job)
         group.MapPost("/", async (CreateBookRequest req, AppDbContext db, IConfiguration config) =>
         {
             var slug = GenerateSlug(req.Title);
@@ -56,7 +53,6 @@ public static class LibraryEndpoints
             return Results.Created($"/api/books/{slug}", new BookDetailDto(book));
         });
 
-        // Delete a book
         group.MapDelete("/{slug}", async (string slug, AppDbContext db, IConfiguration config) =>
         {
             var book = await db.Books.FirstOrDefaultAsync(b => b.Slug == slug);
