@@ -1,11 +1,29 @@
 <script lang="ts">
-	import favicon from '$lib/assets/favicon.svg';
+  import '../app.css';
 
-	let { children } = $props();
+  let { children } = $props();
 </script>
 
-<svelte:head>
-	<link rel="icon" href={favicon} />
-</svelte:head>
+<div class="app-layout">
+  {children}
+</div>
 
-{@render children()}
+<style>
+  :global(*) {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  :global(body) {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0d1117;
+    color: #c9d1d9;
+  }
+
+  .app-layout {
+    display: flex;
+    height: 100vh;
+    width: 100vw;
+  }
+</style>
