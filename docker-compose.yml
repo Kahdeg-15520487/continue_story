@@ -15,18 +15,26 @@ services:
       - AGENT_HOST=agent
       - AGENT_PORT=3001
     depends_on:
-      - agent
+      agent:
+        condition: service_started
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      target: dev
     ports:
       - "5173:5173"
     environment:
-      - PUBLIC_API_BASE=http://localhost:5000
+      - API_PROXY_TARGET=http://api:5000
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/static:/app/static
+      - ./frontend/svelte.config.js:/app/svelte.config.js
+      - ./frontend/vite.config.ts:/app/vite.config.ts
     depends_on:
-      - api
+      api:
+        condition: service_started
 
   agent:
     build:
@@ -37,7 +45,13 @@ services:
       - ./skills:/skills:ro
     environment:
       - PI_CWD=/library
-    # No port mapping needed — api talks to agent internally
+      - PORT=3001
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
 volumes:
   library-data:

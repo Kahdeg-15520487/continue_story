@@ -5,7 +5,7 @@
 </script>
 
 <div class="app-layout">
-  {children}
+  {@render children()}
 </div>
 
 <style>
