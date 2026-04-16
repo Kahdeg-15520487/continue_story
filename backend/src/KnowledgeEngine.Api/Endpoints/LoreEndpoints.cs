@@ -16,7 +16,6 @@ public static class LoreEndpoints
             return Results.Ok(new { jobId, status = "queued" });
         });
 
-        // Get lore files listing
         group.MapGet("/", (string slug, IConfiguration config) =>
         {
             var libraryPath = config.GetValue<string>("Library:Path") ?? "/library";
@@ -32,7 +31,6 @@ public static class LoreEndpoints
             return Results.Ok(new { files });
         });
 
-        // Get specific lore file content
         group.MapGet("/{file}", async (string slug, string file, IConfiguration config) =>
         {
             // Sanitize file name to prevent path traversal

@@ -10,10 +10,16 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("Default")));
 
+// Hangfire.Sqlite v1.4.2's IsConnectionString() checks for ";" in the string.
+// SQLite connection strings with ";" are recognized as raw connection strings.
+var hangfireConnectionString = builder.Configuration.GetConnectionString("Hangfire")
+    ?? builder.Configuration.GetConnectionString("Default")
+    ?? "Data Source=/data/hangfire.db";
+
 builder.Services.AddHangfire(config => config
     .UseSimpleAssemblyNameTypeSerializer()
     .UseRecommendedSerializerSettings()
-    .UseSQLiteStorage(builder.Configuration.GetConnectionString("Default")));
+    .UseSQLiteStorage(hangfireConnectionString));
 builder.Services.AddHangfireServer();
 
 // Conversion service

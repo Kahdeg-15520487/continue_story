@@ -8,13 +8,11 @@ namespace KnowledgeEngine.Api.Services;
 public class AgentService : IAgentService
 {
     private readonly HttpClient _http;
-    private readonly ILogger<AgentService> _logger;
     private readonly string _agentBaseUrl;
 
-    public AgentService(HttpClient http, IConfiguration config, ILogger<AgentService> logger)
+    public AgentService(HttpClient http, IConfiguration config)
     {
         _http = http;
-        _logger = logger;
         var host = config.GetValue<string>("Agent:Host") ?? "agent";
         var port = config.GetValue<int>("Agent:Port");
         _agentBaseUrl = $"http://{host}:{port}";

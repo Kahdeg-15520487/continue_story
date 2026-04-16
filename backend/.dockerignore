@@ -1,0 +1,8 @@
+bin/
+obj/
+*.dll
+*.pdb
+*.suo
+*.user
+.DS_Store
+Thumbs.db
