@@ -20,6 +20,11 @@ builder.Services.AddHangfireServer();
 builder.Services.AddSingleton<IConversionService, ConversionService>();
 builder.Services.AddTransient<ConversionJobService>();
 
+// Agent service
+builder.Services.AddHttpClient<IAgentService, AgentService>();
+builder.Services.AddSingleton<ILoreService, LoreService>();
+builder.Services.AddTransient<LoreJobService>();
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("Frontend", policy =>
@@ -43,6 +48,8 @@ app.MapGet("/api/health", () => Results.Ok(new { status = "healthy", timestamp =
 LibraryEndpoints.Map(app);
 EditorEndpoints.Map(app);
 ConversionEndpoints.Map(app);
+ChatEndpoints.Map(app);
+LoreEndpoints.Map(app);
 
 app.UseHangfireDashboard();
 
