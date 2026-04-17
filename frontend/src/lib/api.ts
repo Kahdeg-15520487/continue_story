@@ -55,7 +55,13 @@ export const api = {
     }),
 
   // Chat (SSE)
-  chat(bookSlug: string, message: string, onChunk: (data: string) => void, onDone: () => void): AbortController {
+  chat(
+    bookSlug: string,
+    message: string,
+    onChunk: (data: string) => void,
+    onDone: () => void,
+    onError?: (err: string) => void,
+  ): AbortController {
     const controller = new AbortController();
     fetch(`${BASE}/chat`, {
       method: 'POST',
@@ -64,27 +70,40 @@ export const api = {
       signal: controller.signal,
     })
       .then(async (res) => {
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ error: res.statusText }));
+          onError?.(err.error || `HTTP ${res.status}`);
+          onDone();
+          return;
+        }
         const reader = res.body?.getReader();
         if (!reader) return;
         const decoder = new TextDecoder();
+        let sseBuffer = '';
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          const text = decoder.decode(value);
-          for (const line of text.split('\n')) {
-            if (line.startsWith('data: ')) {
-              try {
-                const evt = JSON.parse(line.slice(6));
-                if (evt.type === 'agent_end') {
-                  onDone();
-                } else if (evt.type === 'message_update') {
-                  const delta = evt.assistantMessageEvent;
-                  if (delta?.type === 'text_delta') {
-                    onChunk(delta.delta);
+          sseBuffer += decoder.decode(value, { stream: true });
+          const messages = sseBuffer.split('\n\n');
+          sseBuffer = messages.pop()!;
+          for (const msg of messages) {
+            for (const line of msg.split('\n')) {
+              if (line.startsWith('data: ')) {
+                try {
+                  const evt = JSON.parse(line.slice(6));
+                  if (evt.type === 'agent_end') {
+                    onDone();
+                  } else if (evt.type === 'message_update') {
+                    const delta = evt.assistantMessageEvent;
+                    if (delta?.type === 'text_delta') {
+                      onChunk(delta.delta);
+                    }
+                  } else if (evt.type === 'error') {
+                    onError?.(evt.message || evt.error || 'Unknown error');
                   }
+                } catch {
+                  // Ignore parse errors
                 }
-              } catch {
-                // Ignore parse errors
               }
             }
           }
@@ -92,7 +111,9 @@ export const api = {
         onDone();
       })
       .catch((err) => {
-        if (err.name !== 'AbortError') console.error('Chat error:', err);
+        if (err.name !== 'AbortError') {
+          onError?.(err.message || 'Network error');
+        }
       });
     return controller;
   },
