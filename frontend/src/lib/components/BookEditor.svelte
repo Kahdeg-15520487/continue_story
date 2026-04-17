@@ -4,9 +4,10 @@
   import { commonmark } from '@milkdown/kit/preset/commonmark';
   import { gfm } from '@milkdown/kit/preset/gfm';
   import { nord } from '@milkdown/theme-nord';
+  import '@milkdown/theme-nord/lib/style.css';
   import { listener, listenerCtx } from '@milkdown/plugin-listener';
 
-  let { content = '', readonly = $bindable(false), onContentChange }: {
+  let { content = $bindable(''), readonly = $bindable(false), onContentChange }: {
     content: string;
     readonly: boolean;
     onContentChange?: (markdown: string) => void;
@@ -14,6 +15,7 @@
 
   let editorEl: HTMLDivElement;
   let editor: Editor | null = $state(null);
+  let lastContent = $state(content);
 
   onMount(async () => {
     editor = await Editor.make()
@@ -28,16 +30,54 @@
       .use(listener)
       .create();
 
-    // Listen for markdown content changes
     const listenerManager = editor.ctx.get(listenerCtx);
     listenerManager.markdownUpdated((_ctx, markdown, _prevMarkdown) => {
-      onContentChange?.(markdown);
+      if (markdown !== lastContent) {
+        lastContent = markdown;
+        content = markdown;
+        onContentChange?.(markdown);
+      }
     });
   });
 
+  // React to external content changes (e.g., parent loads new content)
   $effect(() => {
     if (!editor) return;
-    // Toggle readonly via the ProseMirror EditorView
+    // Only replace content if it changed from outside (not from our own edit)
+    if (content !== lastContent) {
+      lastContent = content;
+      // Replace the entire editor content by destroying and recreating
+      // (Milkdown v7 doesn't have a clean setContent API)
+      editor.destroy();
+      editor = null;
+      Editor.make()
+        .config((ctx) => {
+          ctx.set(rootCtx, editorEl);
+          ctx.set(defaultValueCtx, content);
+          ctx.set(listenerCtx, {});
+        })
+        .use(commonmark)
+        .use(gfm)
+        .use(nord)
+        .use(listener)
+        .create()
+        .then((e) => {
+          editor = e;
+          const listenerManager = e.ctx.get(listenerCtx);
+          listenerManager.markdownUpdated((_ctx, markdown, _prevMarkdown) => {
+            if (markdown !== lastContent) {
+              lastContent = markdown;
+              content = markdown;
+              onContentChange?.(markdown);
+            }
+          });
+        });
+    }
+  });
+
+  // Toggle readonly
+  $effect(() => {
+    if (!editor) return;
     const editorView = editor.ctx.get(editorViewCtx);
     if (readonly) {
       editorView.dom.setAttribute('contenteditable', 'false');

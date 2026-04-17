@@ -17,6 +17,15 @@
   let showChat = $state(false);
   let showLore = $state(false);
 
+  let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  async function debouncedSave(newContent: string) {
+    if (saveTimeout) clearTimeout(saveTimeout);
+    saveTimeout = setTimeout(async () => {
+      await saveContent(newContent);
+    }, 1000);
+  }
+
   async function loadBook() {
     loading = true;
     error = '';
@@ -114,7 +123,7 @@
           <BookEditor
             bind:content
             readonly={!isEditing}
-            onContentChange={(md) => { if (isEditing) saveContent(md); }}
+            onContentChange={(md) => { if (isEditing) debouncedSave(md); }}
           />
         {:else}
           <div class="empty-editor">
