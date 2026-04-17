@@ -19,6 +19,9 @@ public static class ConversionEndpoints
             IConfiguration config,
             IBackgroundJobClient jobClient) =>
         {
+            if (string.IsNullOrWhiteSpace(slug) || slug.Contains("..") || slug.Contains('/') || slug.Contains('\\'))
+                return Results.BadRequest(new { error = "Invalid slug" });
+
             var book = await db.Books.FirstOrDefaultAsync(b => b.Slug == slug);
             if (book is null) return Results.NotFound(new { error = "Book not found" });
 
@@ -35,14 +38,14 @@ public static class ConversionEndpoints
             await db.SaveChangesAsync();
 
             var jobId = jobClient.Enqueue<IConversionService>(x =>
-                x.ConvertToMarkdownAsync(inputPath, outputPath));
+                x.ConvertToMarkdownAsync(inputPath, outputPath, CancellationToken.None));
 
             // Update book status when job completes via continuation
             jobClient.ContinueJobWith<ConversionJobService>(
                 jobId,
                 service => service.UpdateBookAfterConversion(book.Id));
 
-            return Results.Ok(new { jobId, status = "queued" });
+            return Results.Accepted(null, new { jobId, status = "queued" });
         });
     }
 }

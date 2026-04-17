@@ -27,9 +27,12 @@ public static class LibraryEndpoints
 
         group.MapPost("/", async (CreateBookRequest req, AppDbContext db, IConfiguration config) =>
         {
+            if (string.IsNullOrWhiteSpace(req.Title))
+                return Results.BadRequest(new { error = "Title is required" });
+
             var slug = GenerateSlug(req.Title);
-            if (await db.Books.AnyAsync(b => b.Slug == slug))
-                return Results.Conflict(new { error = "Book already exists" });
+            if (string.IsNullOrWhiteSpace(slug))
+                return Results.BadRequest(new { error = "Title produces an invalid slug" });
 
             var libraryPath = config.GetValue<string>("Library:Path") ?? "/library";
             var bookDir = Path.Combine(libraryPath, slug);
@@ -48,7 +51,14 @@ public static class LibraryEndpoints
             };
 
             db.Books.Add(book);
-            await db.SaveChangesAsync();
+            try
+            {
+                await db.SaveChangesAsync();
+            }
+            catch (DbUpdateException)
+            {
+                return Results.Conflict(new { error = "A book with this slug already exists" });
+            }
 
             return Results.Created($"/api/books/{slug}", new BookDetailDto(book));
         });
@@ -80,6 +90,15 @@ public static class LibraryEndpoints
             .Where(s => !string.IsNullOrEmpty(s))
             .ToArray();
         return string.Join('-', parts);
+    }
+
+    private static string ValidateSlug(string slug)
+    {
+        if (string.IsNullOrWhiteSpace(slug))
+            throw new ArgumentException("Slug cannot be empty");
+        if (slug.Contains("..") || slug.Contains('/') || slug.Contains('\\'))
+            throw new ArgumentException("Slug contains invalid characters");
+        return slug;
     }
 }
 

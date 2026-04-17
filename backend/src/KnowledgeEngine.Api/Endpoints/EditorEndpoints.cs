@@ -13,6 +13,9 @@ public static class EditorEndpoints
         // Get book markdown content
         group.MapGet("/", async (string slug, IConfiguration config) =>
         {
+            if (string.IsNullOrWhiteSpace(slug) || slug.Contains("..") || slug.Contains('/') || slug.Contains('\\'))
+                return Results.BadRequest(new { error = "Invalid slug" });
+
             var libraryPath = config.GetValue<string>("Library:Path") ?? "/library";
             var bookMd = Path.Combine(libraryPath, slug, "book.md");
 
@@ -26,6 +29,9 @@ public static class EditorEndpoints
         // Save book markdown content
         group.MapPut("/", async (string slug, UpdateContentRequest req, IConfiguration config) =>
         {
+            if (string.IsNullOrWhiteSpace(slug) || slug.Contains("..") || slug.Contains('/') || slug.Contains('\\'))
+                return Results.BadRequest(new { error = "Invalid slug" });
+
             var libraryPath = config.GetValue<string>("Library:Path") ?? "/library";
             var bookMd = Path.Combine(libraryPath, slug, "book.md");
 
@@ -39,6 +45,9 @@ public static class EditorEndpoints
         // Get book metadata JSON
         group.MapGet("/metadata", async (string slug, IConfiguration config) =>
         {
+            if (string.IsNullOrWhiteSpace(slug) || slug.Contains("..") || slug.Contains('/') || slug.Contains('\\'))
+                return Results.BadRequest(new { error = "Invalid slug" });
+
             var libraryPath = config.GetValue<string>("Library:Path") ?? "/library";
             var metaPath = Path.Combine(libraryPath, slug, "metadata.json");
 

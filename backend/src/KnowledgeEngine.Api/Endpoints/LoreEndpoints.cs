@@ -12,12 +12,18 @@ public static class LoreEndpoints
         // Trigger lore generation (background job)
         group.MapPost("/", (string slug, IBackgroundJobClient jobClient) =>
         {
+            if (string.IsNullOrWhiteSpace(slug) || slug.Contains("..") || slug.Contains('/') || slug.Contains('\\'))
+                return Results.BadRequest(new { error = "Invalid slug" });
+
             var jobId = jobClient.Enqueue<LoreJobService>(x => x.GenerateLoreAsync(slug));
             return Results.Ok(new { jobId, status = "queued" });
         });
 
         group.MapGet("/", (string slug, IConfiguration config) =>
         {
+            if (string.IsNullOrWhiteSpace(slug) || slug.Contains("..") || slug.Contains('/') || slug.Contains('\\'))
+                return Results.BadRequest(new { error = "Invalid slug" });
+
             var libraryPath = config.GetValue<string>("Library:Path") ?? "/library";
             var wikiDir = Path.Combine(libraryPath, slug, "wiki");
 

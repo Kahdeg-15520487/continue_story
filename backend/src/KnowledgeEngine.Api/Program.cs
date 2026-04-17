@@ -28,7 +28,6 @@ builder.Services.AddTransient<ConversionJobService>();
 
 // Agent service
 builder.Services.AddHttpClient<IAgentService, AgentService>();
-builder.Services.AddSingleton<ILoreService, LoreService>();
 builder.Services.AddTransient<LoreJobService>();
 
 builder.Services.AddCors(options =>
@@ -57,6 +56,7 @@ ConversionEndpoints.Map(app);
 ChatEndpoints.Map(app);
 LoreEndpoints.Map(app);
 
-app.UseHangfireDashboard();
+if (app.Environment.IsDevelopment())
+    app.UseHangfireDashboard();
 
 app.Run();
