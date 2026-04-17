@@ -33,7 +33,6 @@
       }
     );
 
-    // Scroll to bottom
     $effect(() => {
       if (chatContainer) {
         chatContainer.scrollTop = chatContainer.scrollHeight;
@@ -50,7 +49,7 @@
 </script>
 
 <div class="chat-panel">
-  <h3 class="panel-title">💬 AI Chat</h3>
+  <h3 class="panel-title">AI Chat</h3>
 
   <div class="messages" bind:this={chatContainer}>
     {#if messages.length === 0 && !streaming}

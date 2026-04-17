@@ -4,13 +4,13 @@ COPY . .
 RUN dotnet restore KnowledgeEngine.sln
 RUN dotnet publish KnowledgeEngine.sln -c Release -o /app
 
-FROM python:3.13-slim AS python-base
-RUN pip install --no-cache-dir markitdown
-
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
-COPY --from=python-base /usr/local/bin/markitdown /usr/local/bin/markitdown
-COPY --from=python-base /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
-COPY --from=python-base /usr/local/lib/libpython3.13.so* /usr/local/lib/
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends python3 python3-pip && \
+    pip3 install --break-system-packages markitdown && \
+    apt-get remove -y python3-pip && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /app .
 EXPOSE 5000

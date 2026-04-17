@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { api } from '$lib/api';
-  import type { LoreFiles, LoreContent } from '$lib/types';
 
   let { slug }: { slug: string } = $props();
 
@@ -37,7 +36,6 @@
     generating = true;
     try {
       await api.triggerLoreGeneration(slug);
-      // Poll for files
       const interval = setInterval(async () => {
         await loadFiles();
         if (files.length > 0) {
@@ -56,11 +54,11 @@
 </script>
 
 <div class="lore-panel">
-  <h3 class="panel-title">📖 Wiki</h3>
+  <h3 class="panel-title">Wiki</h3>
 
   <div class="lore-actions">
     <button class="btn btn-primary" onclick={generate} disabled={generating}>
-      {generating ? '⏳ Generating...' : '🪄 Generate Lore'}
+      {generating ? 'Generating...' : 'Generate Lore'}
     </button>
   </div>
 

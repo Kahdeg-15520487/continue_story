@@ -55,7 +55,6 @@ function processBuffer() {
 }
 
 function handleAgentMessage(msg: any) {
-  // Handle responses (have an id)
   if (msg.id && msg.type === "response") {
     const pending = pendingRequests.get(msg.id);
     if (pending) {
@@ -69,14 +68,11 @@ function handleAgentMessage(msg: any) {
     return;
   }
 
-  // Handle streaming events — forward to any SSE subscribers
-  // (handled via event emitter pattern below)
   for (const callback of eventCallbacks.values()) {
     callback(msg);
   }
 }
 
-// Simple event bus for SSE subscribers
 type EventCallback = (msg: any) => void;
 const eventCallbacks = new Map<string, EventCallback>();
 
@@ -103,25 +99,21 @@ function sendToAgent(command: any): Promise<any> {
   });
 }
 
-// HTTP API for the .NET backend
 async function handleRequest(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url || "/", `http://localhost:${PORT}`);
 
-  // CORS preflight
   if (req.method === "OPTIONS") {
     res.writeHead(200, corsHeaders());
     res.end();
     return;
   }
 
-  // Health check
   if (url.pathname === "/health") {
     res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders() });
     res.end(JSON.stringify({ status: "healthy", agentPid: agentProcess?.pid }));
     return;
   }
 
-  // Send a prompt to the agent (non-streaming)
   if (url.pathname === "/api/prompt" && req.method === "POST") {
     try {
       const body = await readBody(req);
@@ -135,7 +127,6 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
     return;
   }
 
-  // SSE endpoint for streaming prompts
   if (url.pathname === "/api/prompt/stream" && req.method === "POST") {
     const body = await readBody(req);
     const { message } = JSON.parse(body);
@@ -151,22 +142,18 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
     const callback: EventCallback = (msg) => {
       res.write(`data: ${JSON.stringify(msg)}\n\n`);
     };
-    eventCallbacks.set(clientId, callback);
 
-    // Send prompt to agent
     try {
       await sendToAgent({ type: "prompt", message });
     } catch (err: any) {
       res.write(`data: ${JSON.stringify({ type: "error", message: err.message })}\n\n`);
     }
 
-    // Clean up after agent finishes (agent_end event)
     const cleanup = setTimeout(() => {
       eventCallbacks.delete(clientId);
       res.end();
-    }, 10000); // 10s after last event
+    }, 10000);
 
-    // Override callback to reset timeout on each event
     eventCallbacks.set(clientId, (msg: any) => {
       clearTimeout(cleanup);
       callback(msg);
@@ -181,7 +168,8 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
     return;
   }
 
-  sendError(res, 404, "Not found");
+  res.writeHead(404, { "Content-Type": "application/json", ...corsHeaders() });
+  res.end(JSON.stringify({ error: "Not found" }));
 }
 
 function corsHeaders(): Record<string, string> {
@@ -206,7 +194,6 @@ function sendError(res: ServerResponse, code: number, message: string) {
   res.end(JSON.stringify({ error: message }));
 }
 
-// Start
 agentProcess = startAgent();
 
 const server = createServer(handleRequest);
