@@ -32,20 +32,30 @@
     }
   }
 
+  let loreError = $state('');
+
   async function generate() {
     generating = true;
+    loreError = '';
     try {
       await api.triggerLoreGeneration(slug);
+      let attempts = 0;
+      const maxAttempts = 24; // 24 * 5s = 2 min timeout
       const interval = setInterval(async () => {
+        attempts++;
         await loadFiles();
         if (files.length > 0) {
           clearInterval(interval);
           generating = false;
           await loadFile(files[0]);
+        } else if (attempts >= maxAttempts) {
+          clearInterval(interval);
+          generating = false;
+          loreError = 'Lore generation timed out. The agent may not have API keys configured.';
         }
       }, 5000);
-    } catch (err) {
-      console.error('Lore generation failed:', err);
+    } catch (err: any) {
+      loreError = err.message || 'Lore generation failed';
       generating = false;
     }
   }
@@ -81,6 +91,10 @@
       <pre>{content}</pre>
     {:else if files.length === 0}
       <p class="empty-hint">No lore generated yet. Click "Generate Lore" to analyze the book.</p>
+    {/if}
+
+    {#if loreError}
+      <div class="lore-error">{loreError}</div>
     {/if}
   </div>
 </div>
@@ -167,5 +181,14 @@
     font-size: 13px;
     text-align: center;
     padding-top: 24px;
+  }
+
+  .lore-error {
+    background: #3d1f1f;
+    color: #f97583;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    margin-top: 12px;
   }
 </style>

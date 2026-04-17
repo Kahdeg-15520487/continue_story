@@ -9,6 +9,7 @@
   let showCreateForm = $state(false);
   let newTitle = $state('');
   let newAuthor = $state('');
+  let createError = $state('');
 
   async function loadBooks() {
     try {
@@ -31,8 +32,8 @@
       newAuthor = '';
       showCreateForm = false;
       await loadBooks();
-    } catch (err) {
-      console.error('Failed to create book:', err);
+    } catch (err: any) {
+      createError = err.message || 'Failed to create book';
     }
   }
 
@@ -57,6 +58,10 @@
           <button type="button" class="btn" onclick={() => showCreateForm = false}>Cancel</button>
         </div>
       </form>
+    {/if}
+
+    {#if createError}
+      <div class="create-error">{createError}</div>
     {/if}
 
     {#if loading}
@@ -167,5 +172,12 @@
   .empty-state h2 {
     font-size: 24px;
     margin-bottom: 8px;
+  }
+
+  .create-error {
+    padding: 8px 16px;
+    background: #3d1f1f;
+    color: #f97583;
+    font-size: 13px;
   }
 </style>

@@ -7,12 +7,24 @@
   let input = $state('');
   let streaming = $state(false);
   let currentResponse = $state('');
+  let chatError = $state('');
   let chatContainer: HTMLDivElement;
+
+  // Top-level effect for auto-scroll — reacts to messages and streaming response
+  $effect(() => {
+    // Touch both reactive values to subscribe
+    const _msgs = messages;
+    const _resp = currentResponse;
+    if (chatContainer) {
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+  });
 
   async function send() {
     const msg = input.trim();
     if (!msg || streaming) return;
 
+    chatError = '';
     messages = [...messages, { role: 'user', text: msg }];
     input = '';
     streaming = true;
@@ -30,14 +42,11 @@
         }
         currentResponse = '';
         streaming = false;
+      },
+      (err) => {
+        chatError = err;
       }
     );
-
-    $effect(() => {
-      if (chatContainer) {
-        chatContainer.scrollTop = chatContainer.scrollHeight;
-      }
-    });
   }
 
   function handleKeydown(e: KeyboardEvent) {
@@ -66,8 +75,12 @@
     {#if streaming && currentResponse}
       <div class="message assistant">
         <div class="message-role">AI</div>
-        <div class="message-text">{currentResponse}<span class="cursor">▌</span></div>
+        <div class="message-text">{currentResponse}<span class="cursor">|</span></div>
       </div>
+    {/if}
+
+    {#if chatError}
+      <div class="chat-error">{chatError}</div>
     {/if}
   </div>
 
@@ -143,6 +156,14 @@
   .message-text {
     white-space: pre-wrap;
     word-break: break-word;
+  }
+
+  .chat-error {
+    background: #3d1f1f;
+    color: #f97583;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 12px;
   }
 
   .cursor {
