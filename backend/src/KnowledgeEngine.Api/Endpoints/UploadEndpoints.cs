@@ -75,8 +75,13 @@ public static class UploadEndpoints
                 x.ConvertToMarkdownAsync(filePath, outputPath, CancellationToken.None));
 
             // Update book status when conversion completes
+            // Use the parent jobId to prevent duplicate continuations
             jobClient.ContinueJobWith<ConversionJobService>(jobId,
                 service => service.UpdateBookAfterConversion(book.Id));
+
+            // Store the conversion job ID so we can cancel retries on re-upload
+            book.ErrorMessage = null;
+            book.UpdatedAt = DateTime.UtcNow;
 
             return Results.Ok(new
             {

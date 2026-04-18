@@ -42,9 +42,21 @@ public class ConversionJobService
 
         if (File.Exists(outputPath))
         {
-            book.Status = "ready";
-            book.UpdatedAt = DateTime.UtcNow;
-            _logger.LogInformation("Book marked as ready: Slug={Slug}", book.Slug);
+            var info = new FileInfo(outputPath);
+            if (info.Length > 0)
+            {
+                book.Status = "ready";
+                book.UpdatedAt = DateTime.UtcNow;
+                _logger.LogInformation("Book marked as ready: Slug={Slug} ({Size} bytes)", book.Slug, info.Length);
+            }
+            else
+            {
+                // Empty output file — conversion produced no content
+                book.Status = "error";
+                book.ErrorMessage = "Conversion produced empty output";
+                book.UpdatedAt = DateTime.UtcNow;
+                _logger.LogError("Book marked as error (empty output): Slug={Slug}", book.Slug);
+            }
         }
         else
         {

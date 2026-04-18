@@ -46,6 +46,14 @@ public class ConversionService : IConversionService
             throw new InvalidOperationException($"markitdown conversion failed: {error}");
         }
 
+        if (string.IsNullOrWhiteSpace(output))
+        {
+            _logger.LogWarning("markitdown produced empty output for: {Input}", inputPath);
+            // Write empty file so the continuation can detect it
+            await File.WriteAllTextAsync(outputPath, "", ct);
+            return outputPath;
+        }
+
         await File.WriteAllTextAsync(outputPath, output, ct);
 
         _logger.LogInformation("Conversion complete: {Output} ({Length} chars)", outputPath, output.Length);
