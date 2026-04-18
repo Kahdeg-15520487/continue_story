@@ -93,6 +93,7 @@ export const api = {
                   const evt = JSON.parse(line.slice(6));
                   if (evt.type === 'agent_end') {
                     onDone();
+                    return;
                   } else if (evt.type === 'message_update') {
                     const delta = evt.assistantMessageEvent;
                     if (delta?.type === 'text_delta') {
@@ -114,6 +115,7 @@ export const api = {
         if (err.name !== 'AbortError') {
           onError?.(err.message || 'Network error');
         }
+        onDone();
       });
     return controller;
   },
