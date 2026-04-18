@@ -74,7 +74,11 @@
   <main class="main-content">
     <div class="empty-state">
       <h2>Welcome to Knowledge Engine</h2>
-      <p>Select a book from the library to start reading and editing.</p>
+      {#if books.length === 0}
+        <p>No books yet. Click <strong>+ New Book</strong> in the sidebar to create one, then upload a file to get started.</p>
+      {:else}
+        <p>Select a book from the library to start reading and editing.</p>
+      {/if}
     </div>
   </main>
 </div>
