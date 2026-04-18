@@ -7,6 +7,11 @@ using KnowledgeEngine.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.MaxRequestBodySize = 100 * 1024 * 1024; // 100MB
+});
+
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("Default")));
 
@@ -53,6 +58,7 @@ app.MapGet("/api/health", () => Results.Ok(new { status = "healthy", timestamp =
 LibraryEndpoints.Map(app);
 EditorEndpoints.Map(app);
 ConversionEndpoints.Map(app);
+UploadEndpoints.Map(app);
 ChatEndpoints.Map(app);
 LoreEndpoints.Map(app);
 
