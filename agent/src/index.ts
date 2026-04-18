@@ -3,6 +3,7 @@ import { spawn, type ChildProcess } from "child_process";
 
 const PORT = parseInt(process.env.PORT || "3001");
 const PI_CWD = process.env.PI_CWD || "/library";
+const PI_MODEL = process.env.PI_MODEL || "";
 const MAX_RESTART_ATTEMPTS = 5;
 const RESTART_DELAY_MS = 3000;
 
@@ -32,9 +33,13 @@ function startAgent(): ChildProcess {
     return agentProcess!;
   }
 
+  const args = ["--mode", "rpc", "--no-session", "--skill", "/skills/lore-extraction"];
+  if (PI_MODEL) {
+    args.push("--model", PI_MODEL);
+  }
   const proc = spawn(
     "pi",
-    ["--mode", "rpc", "--no-session", "--skill", "/skills/lore-extraction"],
+    args,
     {
       cwd: PI_CWD,
       stdio: ["pipe", "pipe", "pipe"],
