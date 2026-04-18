@@ -7,7 +7,7 @@ RUN dotnet publish KnowledgeEngine.sln -c Release -o /app
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 RUN apt-get update && \
     apt-get install -y --no-install-recommends python3 python3-pip && \
-    pip3 install --break-system-packages markitdown && \
+    pip3 install --break-system-packages 'markitdown[all]' && \
     apt-get remove -y python3-pip && \
     apt-get autoremove -y && \
     rm -rf /var/lib/apt/lists/*
