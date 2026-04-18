@@ -4,7 +4,7 @@
   import { commonmark } from '@milkdown/kit/preset/commonmark';
   import { gfm } from '@milkdown/kit/preset/gfm';
   import { nord } from '@milkdown/theme-nord';
-  import '@milkdown/theme-nord/lib/style.css';
+  import '@milkdown/theme-nord/style.css';
   import { listener, listenerCtx } from '@milkdown/plugin-listener';
 
   let { content = $bindable(''), readonly = $bindable(false), onContentChange }: {
