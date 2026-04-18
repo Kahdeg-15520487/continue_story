@@ -43,6 +43,7 @@ services:
     volumes:
       - library-data:/library:ro
       - ./skills:/skills:ro
+      - ./agent/models.json:/root/.pi/agent/models.json:ro
     environment:
       - PI_CWD=/library
       - PORT=3001
@@ -51,6 +52,7 @@ services:
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
       - PI_MODEL=${PI_MODEL:-}
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:3001/health"]
