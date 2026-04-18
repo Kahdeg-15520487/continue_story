@@ -21,18 +21,17 @@
   let conversionStatus: ConversionStatus | null = $state(null);
   let conversionElapsed = $state('');
   let conversionStartTime: number | null = null;
+  let conversionPollInterval: ReturnType<typeof setInterval> | null = null;
 
-  function handleUploaded(result: { sourceFile: string; status: string }) {
-    loadBook();
+  function startConversionPolling() {
+    if (conversionPollInterval) return; // already polling
     conversionStartTime = Date.now();
-    // Poll for conversion status with detailed info
-    const poll = setInterval(async () => {
-      if (!slug) { clearInterval(poll); return; }
+    conversionPollInterval = setInterval(async () => {
+      if (!slug) { clearInterval(conversionPollInterval!); conversionPollInterval = null; return; }
       try {
         const status = await api.getConversionStatus(slug);
         conversionStatus = status;
 
-        // Update elapsed time
         if (conversionStartTime) {
           const secs = Math.round((Date.now() - conversionStartTime) / 1000);
           conversionElapsed = secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m ${secs % 60}s`;
@@ -42,18 +41,26 @@
         if (updated) {
           book = updated;
           if (updated.status === 'ready') {
-            clearInterval(poll);
+            clearInterval(conversionPollInterval!);
+            conversionPollInterval = null;
             conversionStatus = null;
             conversionStartTime = null;
             await loadBook();
           } else if (updated.status === 'error') {
-            clearInterval(poll);
+            clearInterval(conversionPollInterval!);
+            conversionPollInterval = null;
           }
         }
       } catch {
-        clearInterval(poll);
+        clearInterval(conversionPollInterval!);
+        conversionPollInterval = null;
       }
     }, 2000);
+  }
+
+  function handleUploaded(result: { sourceFile: string; status: string }) {
+    loadBook();
+    startConversionPolling();
   }
 
   let saveTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -73,6 +80,8 @@
       if (book.status === 'ready') {
         const result = await api.getBookContent(slug);
         content = result.content;
+      } else if (book.status === 'converting') {
+        startConversionPolling();
       }
     } catch (err: any) {
       error = err.message;
