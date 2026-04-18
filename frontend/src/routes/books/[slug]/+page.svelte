@@ -2,6 +2,7 @@
   import { page } from '$app/stores';
   import { onMount } from 'svelte';
   import BookEditor from '$lib/components/BookEditor.svelte';
+  import UploadZone from '$lib/components/UploadZone.svelte';
   import ChatPanel from '$lib/components/ChatPanel.svelte';
   import LorePanel from '$lib/components/LorePanel.svelte';
   import { api } from '$lib/api';
@@ -16,6 +17,28 @@
   let saving = $state(false);
   let showChat = $state(false);
   let showLore = $state(false);
+
+  function handleUploaded(result: { sourceFile: string; status: string }) {
+    loadBook();
+    // Poll for conversion completion
+    const poll = setInterval(async () => {
+      if (!slug) { clearInterval(poll); return; }
+      try {
+        const updated = await api.getBook(slug);
+        if (updated) {
+          book = updated;
+          if (updated.status === 'ready') {
+            clearInterval(poll);
+            await loadBook(); // Loads content too
+          } else if (updated.status === 'error') {
+            clearInterval(poll);
+          }
+        }
+      } catch {
+        clearInterval(poll);
+      }
+    }, 3000);
+  }
 
   let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -55,24 +78,7 @@
     }
   }
 
-  async function triggerConversion() {
-    try {
-      await api.triggerConversion(slug);
-      // Poll for completion
-      const interval = setInterval(async () => {
-        await loadBook();
-        if (book?.status === 'ready' || book?.status === 'error') {
-          clearInterval(interval);
-          if (book.status === 'ready') {
-            const result = await api.getBookContent(slug);
-            content = result.content;
-          }
-        }
-      }, 3000);
-    } catch (err) {
-      console.error('Conversion failed:', err);
-    }
-  }
+
 
   onMount(loadBook);
 </script>
@@ -91,22 +97,12 @@
       <a href="/" class="back-link">← Library</a>
       <h2 class="book-title">{book.title}</h2>
       <div class="toolbar-actions">
-        {#if book.status === 'pending'}
-          <button class="btn btn-primary" onclick={triggerConversion}>
-            Convert
-          </button>
-        {:else if book.status === 'converting'}
-          <span class="status-converting">⏳ Converting...</span>
-        {:else if book.status === 'ready'}
           <button class="btn" onclick={() => isEditing = !isEditing}>
             {isEditing ? '🔒 Lock' : '✏️ Edit'}
           </button>
           {#if saving}
             <span class="status-saving">Saving...</span>
           {/if}
-        {:else if book.status === 'error'}
-          <span class="status-error">❌ Conversion failed</span>
-        {/if}
         <button class="btn" onclick={() => showLore = !showLore}>
           📖 Wiki
         </button>
@@ -125,15 +121,23 @@
             readonly={!isEditing}
             onContentChange={(md) => { if (isEditing) debouncedSave(md); }}
           />
+        {:else if book?.status === 'pending'}
+          <div class="status-section">
+            <p class="status-message">Upload a file to convert to markdown.</p>
+            <UploadZone {slug} onUploaded={handleUploaded} />
+          </div>
+        {:else if book?.status === 'converting'}
+          <div class="status-section">
+            <p class="status-message converting">Converting to markdown...</p>
+            <div class="spinner"></div>
+            <button class="btn-secondary" onclick={loadBook}>Refresh</button>
+          </div>
         {:else}
-          <div class="empty-editor">
-            {#if book.status === 'pending'}
-              <p>Book not yet converted. Click "Convert" to process it.</p>
-            {:else if book.status === 'converting'}
-              <p>Conversion in progress...</p>
-            {:else}
-              <p>Conversion failed: {book.errorMessage}</p>
-            {/if}
+          <div class="status-section">
+            <p class="status-message error">
+              Conversion failed{book?.errorMessage ? `: ${book.errorMessage}` : ''}
+            </p>
+            <UploadZone {slug} onUploaded={handleUploaded} />
           </div>
         {/if}
       </div>
@@ -215,15 +219,7 @@
     color: white;
   }
 
-  .status-converting, .status-saving {
-    color: var(--warning);
-    font-size: 13px;
-  }
 
-  .status-error {
-    color: var(--error);
-    font-size: 13px;
-  }
 
   .main-area {
     flex: 1;
@@ -236,12 +232,52 @@
     overflow-y: auto;
   }
 
-  .empty-editor {
+  .status-section {
     display: flex;
+    flex-direction: column;
     align-items: center;
-    justify-content: center;
-    height: 100%;
+    gap: 16px;
+    padding: 40px 24px;
+  }
+
+  .status-message {
     color: var(--text-secondary);
+    font-size: 14px;
+  }
+
+  .status-message.converting {
+    color: var(--accent);
+  }
+
+  .status-message.error {
+    color: #f97583;
+  }
+
+  .spinner {
+    width: 24px;
+    height: 24px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .btn-secondary {
+    padding: 6px 16px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 13px;
+  }
+
+  .btn-secondary:hover {
+    opacity: 0.8;
   }
 
   .side-panel {
