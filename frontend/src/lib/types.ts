@@ -46,3 +46,11 @@ export interface LoreContent {
   file: string;
   content: string;
 }
+
+export interface UploadResult {
+  slug: string;
+  sourceFile: string;
+  size: number;
+  status: string;
+  jobId: string;
+}
