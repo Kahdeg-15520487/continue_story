@@ -29,7 +29,7 @@
           book = updated;
           if (updated.status === 'ready') {
             clearInterval(poll);
-            await loadBook(); // Loads content too
+            await loadBook();
           } else if (updated.status === 'error') {
             clearInterval(poll);
           }
@@ -78,8 +78,6 @@
     }
   }
 
-
-
   onMount(loadBook);
 </script>
 
@@ -92,7 +90,6 @@
   </div>
 {:else if book}
   <div class="book-view">
-    <!-- Toolbar -->
     <div class="toolbar">
       <a href="/" class="back-link">← Library</a>
       <h2 class="book-title">{book.title}</h2>
@@ -112,7 +109,6 @@
       </div>
     </div>
 
-    <!-- Main area -->
     <div class="main-area">
       <div class="editor-pane">
         {#if book.status === 'ready'}
@@ -121,12 +117,12 @@
             readonly={!isEditing}
             onContentChange={(md) => { if (isEditing) debouncedSave(md); }}
           />
-        {:else if book?.status === 'pending'}
+        {:else if book.status === 'pending'}
           <div class="status-section">
             <p class="status-message">Upload a file to convert to markdown.</p>
             <UploadZone {slug} onUploaded={handleUploaded} />
           </div>
-        {:else if book?.status === 'converting'}
+        {:else if book.status === 'converting'}
           <div class="status-section">
             <p class="status-message converting">Converting to markdown...</p>
             <div class="spinner"></div>
@@ -135,14 +131,13 @@
         {:else}
           <div class="status-section">
             <p class="status-message error">
-              Conversion failed{book?.errorMessage ? `: ${book.errorMessage}` : ''}
+              Conversion failed{book.errorMessage ? `: ${book.errorMessage}` : ''}
             </p>
             <UploadZone {slug} onUploaded={handleUploaded} />
           </div>
         {/if}
       </div>
 
-      <!-- Side panels -->
       {#if showLore}
         <div class="side-panel">
           <LorePanel {slug} />
@@ -212,14 +207,6 @@
     cursor: pointer;
     font-size: 13px;
   }
-
-  .btn-primary {
-    background: #238636;
-    border-color: #238636;
-    color: white;
-  }
-
-
 
   .main-area {
     flex: 1;
