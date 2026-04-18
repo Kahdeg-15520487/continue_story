@@ -101,12 +101,14 @@
         <p class="drop-formats">EPUB, PDF, DOCX, TXT, HTML, and more</p>
       {/if}
 
-      <input
-        type="file"
-        accept={ACCEPTED}
-        onchange={handleInputChange}
-        class="file-input"
-      />
+      {#if !selectedFile}
+        <input
+          type="file"
+          accept={ACCEPTED}
+          onchange={handleInputChange}
+          class="file-input"
+        />
+      {/if}
     </div>
   {:else}
     <!-- Upload progress -->
