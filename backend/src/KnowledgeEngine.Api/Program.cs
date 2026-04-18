@@ -63,6 +63,9 @@ ChatEndpoints.Map(app);
 LoreEndpoints.Map(app);
 
 if (app.Environment.IsDevelopment())
-    app.UseHangfireDashboard();
+    app.UseHangfireDashboard("/hangfire", new DashboardOptions
+    {
+        Authorization = [] // No auth in development
+    });
 
 app.Run();

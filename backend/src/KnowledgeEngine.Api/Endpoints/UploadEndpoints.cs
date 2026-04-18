@@ -1,4 +1,5 @@
 using Hangfire;
+using Hangfire.Storage;
 using KnowledgeEngine.Api.Data;
 using KnowledgeEngine.Api.Models;
 using KnowledgeEngine.Api.Services;
@@ -94,5 +95,31 @@ public static class UploadEndpoints
         })
         .DisableAntiforgery()     // No CSRF for API-only project
         .WithMetadata(new RequestSizeLimitAttribute(100 * 1024 * 1024));  // 100MB limit
+
+        // Conversion job status endpoint
+        group.MapGet("/status", async (string slug, AppDbContext db) =>
+        {
+            var book = await db.Books.FirstOrDefaultAsync(b => b.Slug == slug);
+            if (book is null)
+                return Results.NotFound(new { error = "Book not found" });
+
+            // Get Hangfire job statistics
+            var monitoring = JobStorage.Current.GetMonitoringApi();
+
+            return Results.Ok(new
+            {
+                book.Status,
+                book.SourceFile,
+                book.ErrorMessage,
+                book.UpdatedAt,
+                hangfire = new
+                {
+                    enqueued = monitoring.EnqueuedCount("default"),
+                    processing = monitoring.ProcessingCount(),
+                    succeeded = monitoring.SucceededListCount(),
+                    failed = monitoring.FailedCount(),
+                }
+            });
+        });
     }
 }

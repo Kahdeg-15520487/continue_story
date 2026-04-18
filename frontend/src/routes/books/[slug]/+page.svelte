@@ -6,7 +6,7 @@
   import ChatPanel from '$lib/components/ChatPanel.svelte';
   import LorePanel from '$lib/components/LorePanel.svelte';
   import { api } from '$lib/api';
-  import type { BookDetail } from '$lib/types';
+  import type { BookDetail, ConversionStatus } from '$lib/types';
 
   let slug = $derived($page.params.slug);
   let book: BookDetail | null = $state(null);
@@ -18,17 +18,33 @@
   let showChat = $state(false);
   let showLore = $state(false);
 
+  let conversionStatus: ConversionStatus | null = $state(null);
+  let conversionElapsed = $state('');
+  let conversionStartTime: number | null = null;
+
   function handleUploaded(result: { sourceFile: string; status: string }) {
     loadBook();
-    // Poll for conversion completion
+    conversionStartTime = Date.now();
+    // Poll for conversion status with detailed info
     const poll = setInterval(async () => {
       if (!slug) { clearInterval(poll); return; }
       try {
+        const status = await api.getConversionStatus(slug);
+        conversionStatus = status;
+
+        // Update elapsed time
+        if (conversionStartTime) {
+          const secs = Math.round((Date.now() - conversionStartTime) / 1000);
+          conversionElapsed = secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m ${secs % 60}s`;
+        }
+
         const updated = await api.getBook(slug);
         if (updated) {
           book = updated;
           if (updated.status === 'ready') {
             clearInterval(poll);
+            conversionStatus = null;
+            conversionStartTime = null;
             await loadBook();
           } else if (updated.status === 'error') {
             clearInterval(poll);
@@ -37,7 +53,7 @@
       } catch {
         clearInterval(poll);
       }
-    }, 3000);
+    }, 2000);
   }
 
   let saveTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -124,9 +140,50 @@
           </div>
         {:else if book.status === 'converting'}
           <div class="status-section">
-            <p class="status-message converting">Converting to markdown...</p>
-            <div class="spinner"></div>
-            <button class="btn-secondary" onclick={loadBook}>Refresh</button>
+            <div class="conversion-panel">
+              <div class="conversion-header">
+                <div class="spinner"></div>
+                <h3>Converting to markdown</h3>
+              </div>
+
+              {#if book.sourceFile}
+                <div class="conversion-detail">
+                  <span class="detail-label">File</span>
+                  <span class="detail-value">{book.sourceFile}</span>
+                </div>
+              {/if}
+
+              {#if conversionElapsed}
+                <div class="conversion-detail">
+                  <span class="detail-label">Elapsed</span>
+                  <span class="detail-value">{conversionElapsed}</span>
+                </div>
+              {/if}
+
+              {#if conversionStatus?.hangfire}
+                <div class="conversion-jobs">
+                  <div class="job-stat">
+                    <span class="job-num">{conversionStatus.hangfire.processing}</span>
+                    <span class="job-label">processing</span>
+                  </div>
+                  <div class="job-stat">
+                    <span class="job-num">{conversionStatus.hangfire.enqueued}</span>
+                    <span class="job-label">queued</span>
+                  </div>
+                  <div class="job-stat">
+                    <span class="job-num">{conversionStatus.hangfire.succeeded}</span>
+                    <span class="job-label">done</span>
+                  </div>
+                  {#if conversionStatus.hangfire.failed > 0}
+                    <div class="job-stat failed">
+                      <span class="job-num">{conversionStatus.hangfire.failed}</span>
+                      <span class="job-label">failed</span>
+                    </div>
+                  {/if}
+                </div>
+                <a href="/hangfire" target="_blank" class="hangfire-link">View in Hangfire Dashboard</a>
+              {/if}
+            </div>
           </div>
         {:else}
           <div class="status-section">
@@ -265,6 +322,97 @@
 
   .btn-secondary:hover {
     opacity: 0.8;
+  }
+
+  .conversion-panel {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-width: 320px;
+  }
+
+  .conversion-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .conversion-header h3 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+  }
+
+  .conversion-header .spinner {
+    width: 18px;
+    height: 18px;
+    border-width: 2px;
+  }
+
+  .conversion-detail {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 0;
+  }
+
+  .detail-label {
+    color: var(--text-secondary);
+    font-size: 13px;
+  }
+
+  .detail-value {
+    color: var(--text-primary);
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .conversion-jobs {
+    display: flex;
+    gap: 16px;
+    padding: 12px 0;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .job-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .job-stat.failed .job-num {
+    color: #f97583;
+  }
+
+  .job-num {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--accent);
+  }
+
+  .job-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .hangfire-link {
+    color: var(--accent);
+    font-size: 12px;
+    text-decoration: none;
+    text-align: center;
+  }
+
+  .hangfire-link:hover {
+    text-decoration: underline;
   }
 
   .side-panel {

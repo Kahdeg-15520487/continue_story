@@ -1,4 +1,4 @@
-import type { BookSummary, BookDetail, BookContent, CreateBookRequest, LoreFiles, LoreContent, UploadResult } from './types';
+import type { BookSummary, BookDetail, BookContent, CreateBookRequest, LoreFiles, LoreContent, UploadResult, ConversionStatus } from './types';
 
 const BASE = '/api';
 
@@ -119,6 +119,10 @@ export const api = {
       });
     return controller;
   },
+
+  // Conversion status
+  getConversionStatus: (slug: string) =>
+    request<ConversionStatus>(`/books/${slug}/upload/status`),
 
   // Upload file for a book
   upload(

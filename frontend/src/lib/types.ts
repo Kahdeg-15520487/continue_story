@@ -54,3 +54,16 @@ export interface UploadResult {
   status: string;
   jobId: string;
 }
+
+export interface ConversionStatus {
+  status: string;
+  sourceFile: string | null;
+  errorMessage: string | null;
+  updatedAt: string;
+  hangfire: {
+    enqueued: number;
+    processing: number;
+    succeeded: number;
+    failed: number;
+  };
+}
