@@ -3,6 +3,7 @@
     "deepseek": {
       "baseUrl": "https://api.deepseek.com",
       "apiKey": "DEEPSEEK_API_KEY",
+      "api": "openai",
       "models": [
         {
           "id": "deepseek-reasoner",
