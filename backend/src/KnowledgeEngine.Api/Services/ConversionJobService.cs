@@ -48,6 +48,10 @@ public class ConversionJobService
                 book.Status = "ready";
                 book.UpdatedAt = DateTime.UtcNow;
                 _logger.LogInformation("Book marked as ready: Slug={Slug} ({Size} bytes)", book.Slug, info.Length);
+
+                var jobClient = scope.ServiceProvider.GetRequiredService<IBackgroundJobClient>();
+                jobClient.Enqueue<LoreJobService>(x => x.GenerateLoreAsync(book.Slug));
+                _logger.LogInformation("Lore generation auto-triggered for {Slug}", book.Slug);
             }
             else
             {
