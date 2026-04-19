@@ -73,6 +73,9 @@ public class LoreJobService
             var sessionId = await agentService.EnsureSessionAsync(slug, "write");
             await agentService.SendPromptAsync(sessionId, prompt);
 
+            // Kill the write session — it's one-shot
+            try { await agentService.KillSessionAsync(sessionId); } catch { }
+
             var expectedFiles = new[] { "characters.md", "locations.md", "themes.md", "summary.md" };
             var createdFiles = expectedFiles
                 .Where(f => File.Exists(Path.Combine(wikiDir, f)))

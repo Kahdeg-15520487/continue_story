@@ -17,4 +17,9 @@ public interface IAgentService
     /// Yields JSON-RPC event strings as they arrive.
     /// </summary>
     IAsyncEnumerable<string> StreamPromptAsync(string sessionId, string message, CancellationToken ct = default);
+
+    /// <summary>
+    /// Kill a session by ID.
+    /// </summary>
+    Task KillSessionAsync(string sessionId, CancellationToken ct = default);
 }

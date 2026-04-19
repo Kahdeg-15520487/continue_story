@@ -93,4 +93,13 @@ public class AgentService : IAgentService
                 yield return line["data: ".Length..];
         }
     }
+
+    public async Task KillSessionAsync(string sessionId, CancellationToken ct = default)
+    {
+        try
+        {
+            await _http.DeleteAsync($"{_agentBaseUrl}/api/sessions/{sessionId}", ct);
+        }
+        catch { }
+    }
 }
