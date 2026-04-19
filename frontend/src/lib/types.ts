@@ -55,6 +55,14 @@ export interface UploadResult {
   jobId: string;
 }
 
+export interface ChatHistoryMessage {
+  id: number;
+  role: string;
+  content: string;
+  thinking: string | null;
+  createdAt: string;
+}
+
 export interface ConversionStatus {
   status: string;
   sourceFile: string | null;

@@ -1,4 +1,4 @@
-import type { BookSummary, BookDetail, BookContent, CreateBookRequest, LoreFiles, LoreContent, UploadResult, ConversionStatus } from './types';
+import type { BookSummary, BookDetail, BookContent, CreateBookRequest, LoreFiles, LoreContent, UploadResult, ConversionStatus, ChatHistoryMessage } from './types';
 
 const BASE = '/api';
 
@@ -52,6 +52,21 @@ export const api = {
   triggerLoreGeneration: (slug: string) =>
     request<{ jobId: string; status: string }>(`/books/${slug}/lore`, {
       method: 'POST',
+    }),
+
+  // Chat history
+  getChatHistory: (slug: string) =>
+    request<ChatHistoryMessage[]>(`/books/${slug}/chat`),
+
+  saveChatMessage: (slug: string, role: string, content: string, thinking?: string) =>
+    request<{ id: number }>(`/books/${slug}/chat`, {
+      method: 'POST',
+      body: JSON.stringify({ role, content, thinking: thinking || null }),
+    }),
+
+  clearChatHistory: (slug: string) =>
+    request<{ cleared: boolean }>(`/books/${slug}/chat`, {
+      method: 'DELETE',
     }),
 
   // Chat (SSE)
