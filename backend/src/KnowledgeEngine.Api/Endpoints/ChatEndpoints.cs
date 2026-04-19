@@ -13,9 +13,13 @@ public static class ChatEndpoints
             ChatRequest req,
             IAgentService agentService,
             IConfiguration config,
-            HttpResponse response,
+            HttpContext ctx,
             CancellationToken ct) =>
         {
+            if (string.IsNullOrWhiteSpace(req.BookSlug) || req.BookSlug.Contains("..") || req.BookSlug.Contains('/') || req.BookSlug.Contains('\\'))
+                return Results.BadRequest(new { error = "Invalid book slug" });
+
+            var response = ctx.Response;
             response.ContentType = "text/event-stream";
             response.Headers.Append("Cache-Control", "no-cache");
             response.Headers.Append("Connection", "keep-alive");
@@ -55,6 +59,7 @@ public static class ChatEndpoints
                 await response.WriteAsync($"data: {evt}\n\n", ct);
                 await response.Body.FlushAsync(ct);
             }
+            return Results.Ok();
         });
     }
 }

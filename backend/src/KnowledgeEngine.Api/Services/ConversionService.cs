@@ -1,7 +1,10 @@
 using System.Diagnostics;
+using Hangfire;
+using Hangfire.Common;
 
 namespace KnowledgeEngine.Api.Services;
 
+[AutomaticRetry(Attempts = 0)]
 public class ConversionService : IConversionService
 {
     private readonly ILogger<ConversionService> _logger;

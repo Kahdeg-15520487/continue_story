@@ -91,15 +91,6 @@ public static class LibraryEndpoints
             .ToArray();
         return string.Join('-', parts);
     }
-
-    private static string ValidateSlug(string slug)
-    {
-        if (string.IsNullOrWhiteSpace(slug))
-            throw new ArgumentException("Slug cannot be empty");
-        if (slug.Contains("..") || slug.Contains('/') || slug.Contains('\\'))
-            throw new ArgumentException("Slug contains invalid characters");
-        return slug;
-    }
 }
 
 // DTOs
