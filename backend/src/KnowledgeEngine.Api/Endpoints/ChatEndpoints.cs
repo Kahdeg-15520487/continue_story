@@ -77,7 +77,8 @@ public static class ChatEndpoints
                 $"# Conversation History\n\n{historyText}\n\n" +
                 $"User: {req.Message}";
 
-            await foreach (var evt in agentService.StreamPromptAsync(fullPrompt, ct))
+            var sessionId = await agentService.EnsureSessionAsync(req.BookSlug, "read", ct);
+            await foreach (var evt in agentService.StreamPromptAsync(sessionId, fullPrompt, ct))
             {
                 await response.WriteAsync($"data: {evt}\n\n", ct);
                 await response.Body.FlushAsync(ct);

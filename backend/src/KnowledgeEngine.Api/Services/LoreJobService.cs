@@ -50,7 +50,8 @@ public class LoreJobService
 
         try
         {
-            await agentService.SendPromptAsync(prompt);
+            var sessionId = await agentService.EnsureSessionAsync(slug, "write");
+            await agentService.SendPromptAsync(sessionId, prompt);
             _logger.LogInformation("Lore generation complete for book: {Slug}", slug);
         }
         catch (Exception ex)

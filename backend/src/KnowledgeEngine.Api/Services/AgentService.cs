@@ -22,13 +22,32 @@ public class AgentService : IAgentService
         _logger.LogInformation("AgentService configured: {Url}", _agentBaseUrl);
     }
 
-    public async Task<string> SendPromptAsync(string message, CancellationToken ct = default)
+    public async Task<string> EnsureSessionAsync(string bookSlug, string mode = "read", CancellationToken ct = default)
     {
-        _logger.LogInformation("Sending non-streaming prompt to agent ({Length} chars)", message.Length);
+        _logger.LogInformation("Ensuring session for book: {Slug} (mode: {Mode})", bookSlug, mode);
+
+        var response = await _http.PostAsync($"{_agentBaseUrl}/api/sessions",
+            new StringContent(JsonSerializer.Serialize(new { bookSlug, mode }), Encoding.UTF8, "application/json"),
+            ct);
+
+        response.EnsureSuccessStatusCode();
+
+        var json = await response.Content.ReadAsStringAsync(ct);
+        var result = JsonSerializer.Deserialize<JsonElement>(json);
+        var sessionId = result.GetProperty("sessionId").GetString()
+            ?? throw new InvalidOperationException("Agent returned no sessionId");
+
+        _logger.LogInformation("Session ready: {SessionId} for {Slug}", sessionId, bookSlug);
+        return sessionId;
+    }
+
+    public async Task<string> SendPromptAsync(string sessionId, string message, CancellationToken ct = default)
+    {
+        _logger.LogInformation("Sending prompt to session {Session} ({Length} chars)", sessionId, message.Length);
 
         try
         {
-            var response = await _http.PostAsync($"{_agentBaseUrl}/api/prompt",
+            var response = await _http.PostAsync($"{_agentBaseUrl}/api/sessions/{sessionId}/prompt",
                 new StringContent(JsonSerializer.Serialize(new { message }), Encoding.UTF8, "application/json"),
                 ct);
 
@@ -40,21 +59,21 @@ public class AgentService : IAgentService
             if (result.TryGetProperty("data", out var data) && data.ValueKind != JsonValueKind.Null)
                 return data.ToString() ?? "";
 
-            _logger.LogWarning("Agent returned no data for prompt");
+            _logger.LogWarning("Agent returned no data for session {Session}", sessionId);
             return "";
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to send prompt to agent");
+            _logger.LogError(ex, "Failed to send prompt to session {Session}", sessionId);
             throw;
         }
     }
 
-    public async IAsyncEnumerable<string> StreamPromptAsync(string message, [EnumeratorCancellation] CancellationToken ct = default)
+    public async IAsyncEnumerable<string> StreamPromptAsync(string sessionId, string message, [EnumeratorCancellation] CancellationToken ct = default)
     {
-        _logger.LogInformation("Sending streaming prompt to agent ({Length} chars)", message.Length);
+        _logger.LogInformation("Streaming to session {Session} ({Length} chars)", sessionId, message.Length);
 
-        var request = new HttpRequestMessage(HttpMethod.Post, $"{_agentBaseUrl}/api/prompt/stream");
+        var request = new HttpRequestMessage(HttpMethod.Post, $"{_agentBaseUrl}/api/sessions/{sessionId}/prompt/stream");
         request.Content = new StringContent(JsonSerializer.Serialize(new { message }), Encoding.UTF8, "application/json");
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
 

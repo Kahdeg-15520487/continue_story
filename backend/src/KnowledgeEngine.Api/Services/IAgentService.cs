@@ -3,13 +3,18 @@ namespace KnowledgeEngine.Api.Services;
 public interface IAgentService
 {
     /// <summary>
-    /// Send a non-streaming prompt to the Pi Agent and return the full response.
+    /// Ensure an agent session exists for the given book, returning the session ID.
     /// </summary>
-    Task<string> SendPromptAsync(string message, CancellationToken ct = default);
+    Task<string> EnsureSessionAsync(string bookSlug, string mode = "read", CancellationToken ct = default);
 
     /// <summary>
-    /// Stream a prompt response from the Pi Agent.
+    /// Send a non-streaming prompt to a session and return the full response.
+    /// </summary>
+    Task<string> SendPromptAsync(string sessionId, string message, CancellationToken ct = default);
+
+    /// <summary>
+    /// Stream a prompt response from a session.
     /// Yields JSON-RPC event strings as they arrive.
     /// </summary>
-    IAsyncEnumerable<string> StreamPromptAsync(string message, CancellationToken ct = default);
+    IAsyncEnumerable<string> StreamPromptAsync(string sessionId, string message, CancellationToken ct = default);
 }
