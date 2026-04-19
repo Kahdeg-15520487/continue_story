@@ -24,8 +24,6 @@ interface ManagedSession {
   lastActivity: number;
   idleTimer: ReturnType<typeof setTimeout>;
   maxLifetimeTimer: ReturnType<typeof setTimeout>;
-  // For collecting non-streaming responses
-  responseResolve: ((text: string) => void) | null;
   responseReject: ((err: Error) => void) | null;
   responseText: string;
 }
@@ -65,7 +63,6 @@ async function createSession(bookSlug: string, mode: "read" | "write"): Promise<
     lastActivity: Date.now(),
     idleTimer: setTimeout(() => disposeSession(id, "idle timeout"), SESSION_IDLE_TIMEOUT_MS),
     maxLifetimeTimer: setTimeout(() => disposeSession(id, "max lifetime"), SESSION_MAX_LIFETIME_MS),
-    responseResolve: null,
     responseReject: null,
     responseText: "",
   };
@@ -94,12 +91,6 @@ function handleSessionEvent(session: ManagedSession, event: AgentSessionEvent) {
       const text = event.messages?.find((m: any) => m.role === "assistant")
         ?.content?.find((c: any) => c.type === "text")?.text || "";
       console.log(`[session:${session.id}] agent_end: "${text.slice(0, 100)}${text.length > 100 ? "..." : ""}"`);
-      if (session.responseResolve) {
-        session.responseResolve(session.responseText);
-        session.responseResolve = null;
-        session.responseReject = null;
-        session.responseText = "";
-      }
       break;
     }
     case "message_update": {
@@ -113,8 +104,7 @@ function handleSessionEvent(session: ManagedSession, event: AgentSessionEvent) {
       console.error(`[session:${session.id}] extension_error: ${event.error || "unknown"}`);
       if (session.responseReject) {
         session.responseReject(new Error(event.error || "Extension error"));
-        session.responseResolve = null;
-        session.responseReject = null;
+    session.responseReject = null;
         session.responseText = "";
       }
       break;
@@ -139,7 +129,6 @@ function disposeSession(id: string, reason: string) {
   clearTimeout(managed.maxLifetimeTimer);
   if (managed.responseReject) {
     managed.responseReject(new Error(`Session disposed: ${reason}`));
-    managed.responseResolve = null;
     managed.responseReject = null;
   }
   sessions.delete(id);
@@ -243,17 +232,25 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       const { message } = JSON.parse(body);
       console.log(`[session:${managed.id}] prompt: "${message.slice(0, 80)}..." (${message.length} chars)`);
 
-      // Set up promise for response collection
-      const responsePromise = new Promise<string>((resolve, reject) => {
-        managed.responseResolve = resolve;
+      if (managed.session.isStreaming) {
+        sendError(res, 409, "Session is busy processing another prompt");
+        return;
+      }
+
+      managed.responseText = "";
+      managed.responseReject = null;
+
+      const promptError = new Promise<never>((_, reject) => {
         managed.responseReject = reject;
-        managed.responseText = "";
       });
 
-      // Send prompt — agent_end event will resolve the promise
-      await managed.session.prompt(message);
+      const result = await Promise.race([
+        managed.session.prompt(message).then(() => managed.responseText),
+        promptError,
+      ]);
 
-      const result = await responsePromise;
+      managed.responseReject = null;
+      managed.responseText = "";
       console.log(`[session:${managed.id}] response: ${result.length} chars`);
 
       res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders() });

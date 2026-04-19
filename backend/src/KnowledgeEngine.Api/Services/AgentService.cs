@@ -19,6 +19,7 @@ public class AgentService : IAgentService
         var port = config.GetValue<int>("Agent:Port");
         if (port == 0) port = 3001;
         _agentBaseUrl = $"http://{host}:{port}";
+        _http.Timeout = TimeSpan.FromMinutes(10);
         _logger.LogInformation("AgentService configured: {Url}", _agentBaseUrl);
     }
 
