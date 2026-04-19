@@ -41,7 +41,7 @@ services:
       context: ./agent
       dockerfile: Dockerfile
     volumes:
-      - library-data:/library:ro
+      - library-data:/library
       - ./skills:/skills:ro
       - ./agent/models.json:/root/.pi/agent/models.json:ro
     environment:
@@ -54,6 +54,7 @@ services:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
       - PI_MODEL=${PI_MODEL:-}
+      - MAX_SESSIONS=${MAX_SESSIONS:-10}
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:3001/health"]
       interval: 10s
