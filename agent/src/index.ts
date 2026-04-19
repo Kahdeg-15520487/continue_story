@@ -1,276 +1,169 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "http";
-import { spawn, type ChildProcess } from "child_process";
+import {
+  createAgentSession,
+  createCodingTools,
+  createReadOnlyTools,
+  DefaultResourceLoader,
+  getAgentDir,
+  SessionManager,
+  type AgentSession,
+  type AgentSessionEvent,
+} from "@mariozechner/pi-coding-agent";
 
 const PORT = parseInt(process.env.PORT || "3001");
-const PI_CWD = process.env.PI_CWD || "/library";
-const PI_MODEL = process.env.PI_MODEL || "";
-const MAX_RESTART_ATTEMPTS = 5;
-const RESTART_DELAY_MS = 3000;
+const MAX_SESSIONS = parseInt(process.env.MAX_SESSIONS || "10");
+const SESSION_IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 min idle → dispose
+const SESSION_MAX_LIFETIME_MS = 30 * 60 * 1000; // 30 min hard limit
 
-let agentProcess: ChildProcess | null = null;
-let requestId = 0;
-let restartAttempts = 0;
-let buffer = "";
-
-const pendingRequests = new Map<
-  number,
-  {
-    resolve: (data: any) => void;
-    reject: (err: Error) => void;
-  }
->();
-
-type EventCallback = (msg: any) => void;
-const eventCallbacks = new Map<string, EventCallback>();
-
-// --- Agent process lifecycle ---
-
-function startAgent(): ChildProcess {
-  if (restartAttempts >= MAX_RESTART_ATTEMPTS) {
-    console.error(
-      `[agent] max restart attempts (${MAX_RESTART_ATTEMPTS}) reached. Not restarting.`
-    );
-    return agentProcess!;
-  }
-
-  const args = ["--mode", "rpc", "--no-session", "--skill", "/skills/lore-extraction"];
-  if (PI_MODEL) {
-    args.push("--model", PI_MODEL);
-  }
-  const proc = spawn(
-    "pi",
-    args,
-    {
-      cwd: PI_CWD,
-      stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env },
-    }
-  );
-
-  proc.stderr?.on("data", (chunk: Buffer) => {
-    console.error("[agent:stderr]", chunk.toString());
-  });
-
-  proc.stdout?.on("data", (chunk: Buffer) => {
-    buffer += chunk.toString();
-    processBuffer();
-  });
-
-  proc.on("exit", (code) => {
-    console.error(
-      `[agent] exited with code ${code}, restart attempt ${restartAttempts + 1}/${MAX_RESTART_ATTEMPTS} in ${RESTART_DELAY_MS}ms...`
-    );
-    restartAttempts++;
-    setTimeout(() => {
-      agentProcess = startAgent();
-    }, RESTART_DELAY_MS);
-  });
-
-  console.log(
-    `[agent] started (pid: ${proc.pid}, cwd: ${PI_CWD})`
-  );
-  restartAttempts = 0;
-  return proc;
+interface ManagedSession {
+  id: string;
+  bookSlug: string;
+  session: AgentSession;
+  unsubscribe: () => void;
+  createdAt: number;
+  lastActivity: number;
+  idleTimer: ReturnType<typeof setTimeout>;
+  maxLifetimeTimer: ReturnType<typeof setTimeout>;
+  // For collecting non-streaming responses
+  responseResolve: ((text: string) => void) | null;
+  responseReject: ((err: Error) => void) | null;
+  responseText: string;
 }
 
-// --- JSONL framing ---
+const sessions = new Map<string, ManagedSession>();
 
-function processBuffer() {
-  let newlineIndex: number;
-  while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
-    let line = buffer.slice(0, newlineIndex);
-    buffer = buffer.slice(newlineIndex + 1);
-    if (line.endsWith("\r")) line = line.slice(0, -1);
-    if (!line.trim()) continue;
+// --- Session lifecycle ---
 
-    try {
-      const msg = JSON.parse(line);
-      handleAgentMessage(msg);
-    } catch {
-      console.error("[agent] failed to parse line:", line);
-    }
-  }
-}
+async function createSession(bookSlug: string, mode: "read" | "write"): Promise<ManagedSession> {
+  const id = `${bookSlug}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const cwd = `/library/${bookSlug}`;
+  const agentDir = getAgentDir();
 
-// --- Message routing ---
+  const tools = mode === "write" ? createCodingTools(cwd) : createReadOnlyTools(cwd);
 
-function handleAgentMessage(msg: any) {
-  // Responses (have id + type "response") — resolve pending request
-  if (msg.id && msg.type === "response") {
-    const pending = pendingRequests.get(msg.id);
-    if (pending) {
-      pendingRequests.delete(msg.id);
-      if (msg.success) {
-        pending.resolve(msg.data);
-      } else {
-        pending.reject(
-          new Error(msg.error || "Agent command failed")
-        );
-      }
-    }
-    return;
-  }
-
-  // All other messages are events — log useful detail, forward to SSE subscribers
-  if (msg.type === "agent_start") {
-    console.log(`[event] agent started`);
-  } else if (msg.type === "turn_start") {
-    console.log(`[event] turn start`);
-  } else if (msg.type === "turn_end") {
-    console.log(`[event] turn end`);
-  } else if (msg.type === "message_start") {
-    const role = msg.message?.role || "unknown";
-    const api = msg.message?.api || "";
-    const provider = msg.message?.provider || "";
-    const model = msg.message?.model || "";
-    console.log(`[event] message_start: role=${role} provider=${provider} model=${model}`);
-  } else if (msg.type === "message_end") {
-    const role = msg.message?.role || "unknown";
-    const usage = msg.message?.usage;
-    const stopReason = msg.message?.stopReason || "";
-    const errMsg = msg.message?.errorMessage;
-    const tokens = usage ? `in=${usage.input || 0} out=${usage.output || 0} total=${usage.totalTokens || 0}` : "";
-    console.log(`[event] message_end: role=${role} stop=${stopReason} ${tokens}${errMsg ? " ERROR: " + errMsg : ""}`);
-  } else if (msg.type === "message_update") {
-    const delta = msg.assistantMessageEvent;
-    if (delta?.type === "toolcall_start") {
-      const name = delta.toolCall?.name || "unknown";
-      const args = JSON.stringify(delta.toolCall?.arguments || {}).slice(0, 200);
-      console.log(`[event] toolcall_start: ${name}(${args})`);
-    } else if (delta?.type === "toolcall_delta") {
-      const name = delta.toolCall?.name || "";
-      const partialArgs = delta.toolCall?.arguments || "";
-      if (typeof partialArgs === "string" && partialArgs.length > 0) {
-        console.log(`[event] toolcall_delta: ${name} args+=${JSON.stringify(partialArgs).slice(0, 150)}`);
-      }
-    } else if (delta?.type === "toolcall_end") {
-      const name = delta.toolCall?.name || "unknown";
-      const args = JSON.stringify(delta.toolCall?.arguments || {}).slice(0, 300);
-      console.log(`[event] toolcall_end: ${name}(${args})`);
-    } else if (delta?.type === "thinking_start") {
-      console.log(`[event] thinking started`);
-    } else if (delta?.type === "thinking_delta") {
-      // Skip — very verbose
-    } else if (delta?.type === "thinking_end") {
-      const thinking = msg.message?.content?.find((c: any) => c.type === "thinking")?.thinking || "";
-      console.log(`[event] thinking_end: ${thinking.length} chars`);
-    } else if (delta?.type === "text_delta") {
-      // Skip — logged in agent_end summary
-    } else if (delta?.type === "text_start") {
-      console.log(`[event] text_start`);
-    } else if (delta?.type === "text_end") {
-      console.log(`[event] text_end`);
-    } else {
-      console.log(`[event] message_update type=${delta?.type || "unknown"}`);
-    }
-  } else if (msg.type === "tool_execution_start") {
-    const name = msg.toolCall?.name || "unknown";
-    const args = JSON.stringify(msg.toolCall?.arguments || {}).slice(0, 200);
-    console.log(`[event] tool_execution_start: ${name}(${args})`);
-  } else if (msg.type === "tool_execution_update") {
-    const output = JSON.stringify(msg.output || "").slice(0, 200);
-    console.log(`[event] tool_execution_update: ${output}`);
-  } else if (msg.type === "tool_execution_end") {
-    const name = msg.toolCall?.name || "unknown";
-    const output = JSON.stringify(msg.output || "").slice(0, 300);
-    console.log(`[event] tool_execution_end: ${name} => ${output}`);
-  } else if (msg.type === "agent_end") {
-    const assistantMsg = msg.messages?.find((m: any) => m.role === "assistant");
-    const text = assistantMsg?.content?.find((c: any) => c.type === "text")?.text || "";
-    const errMsg = assistantMsg?.errorMessage;
-    const usage = assistantMsg?.usage;
-    const tokens = usage ? `in=${usage.input || 0} out=${usage.output || 0} total=${usage.totalTokens || 0}` : "";
-    console.log(`[event] agent_end: ${errMsg ? "ERROR: " + errMsg : `"${text.slice(0, 120)}${text.length > 120 ? "..." : ""}"`} ${tokens}`);
-  } else {
-    console.log(`[event] ${msg.type}: ${JSON.stringify(msg).slice(0, 200)}`);
-  }
-  for (const callback of eventCallbacks.values()) {
-    callback(msg);
-  }
-}
-
-// --- Agent communication ---
-
-function sendToAgent(command: any): Promise<any> {
-  return new Promise((resolve, reject) => {
-    if (!agentProcess || !agentProcess.stdin) {
-      reject(new Error("Agent process not running"));
-      return;
-    }
-
-    const id = ++requestId;
-    const fullCommand = { ...command, id };
-    pendingRequests.set(id, { resolve, reject });
-
-    agentProcess.stdin.write(JSON.stringify(fullCommand) + "\n");
-
-    setTimeout(() => {
-      if (pendingRequests.has(id)) {
-        pendingRequests.delete(id);
-        reject(new Error("Agent request timed out (5 min)"));
-      }
-    }, 5 * 60 * 1000);
+  const loader = new DefaultResourceLoader({
+    cwd,
+    agentDir,
+    skillsOverride: (current) => ({
+      skills: current.skills.filter(s =>
+        s.name === "lore-extraction"
+      ),
+      diagnostics: current.diagnostics,
+    }),
   });
+  await loader.reload();
+
+  const { session } = await createAgentSession({
+    cwd,
+    agentDir,
+    tools,
+    resourceLoader: loader,
+    sessionManager: SessionManager.inMemory(),
+  });
+
+  const managed: ManagedSession = {
+    id,
+    bookSlug,
+    session,
+    unsubscribe: () => {},
+    createdAt: Date.now(),
+    lastActivity: Date.now(),
+    idleTimer: setTimeout(() => disposeSession(id, "idle timeout"), SESSION_IDLE_TIMEOUT_MS),
+    maxLifetimeTimer: setTimeout(() => disposeSession(id, "max lifetime"), SESSION_MAX_LIFETIME_MS),
+    responseResolve: null,
+    responseReject: null,
+    responseText: "",
+  };
+
+  // Subscribe to events for logging and non-streaming response collection
+  managed.unsubscribe = session.subscribe((event: AgentSessionEvent) => {
+    handleSessionEvent(managed, event);
+  });
+
+  sessions.set(id, managed);
+  console.log(`[session:${id}] created for "${bookSlug}" (mode: ${mode}, cwd: ${cwd}, active: ${sessions.size})`);
+  return managed;
 }
 
-/**
- * Send a prompt and collect the full assistant text response from events.
- * This is needed because the RPC `prompt` command only confirms the message
- * was queued — the actual response text arrives via `message_update` events.
- */
-function sendPromptAndWaitForResponse(
-  message: string
-): Promise<string> {
-  return new Promise((resolve, reject) => {
-    if (!agentProcess || !agentProcess.stdin) {
-      reject(new Error("Agent process not running"));
-      return;
+function handleSessionEvent(session: ManagedSession, event: AgentSessionEvent) {
+  switch (event.type) {
+    case "message_start":
+      console.log(`[session:${session.id}] message_start: model=${event.message?.model || ""}`);
+      break;
+    case "message_end": {
+      const usage = event.message?.usage;
+      const tokens = usage ? `in=${usage.input || 0} out=${usage.output || 0}` : "";
+      console.log(`[session:${session.id}] message_end: ${tokens}`);
+      break;
     }
-
-    let fullText = "";
-    const clientId = `collect-${++requestId}`;
-
-    const cleanup = () => {
-      eventCallbacks.delete(clientId);
-    };
-
-    const timeout = setTimeout(() => {
-      cleanup();
-      reject(new Error("Agent response timed out (5 min)"));
-    }, 5 * 60 * 1000);
-
-    eventCallbacks.set(clientId, (msg: any) => {
-      if (msg.type === "message_update") {
-        const delta = msg.assistantMessageEvent;
-        if (delta?.type === "text_delta") {
-          fullText += delta.delta;
-        }
-      } else if (msg.type === "agent_end") {
-        clearTimeout(timeout);
-        cleanup();
-        resolve(fullText);
-      } else if (msg.type === "extension_error") {
-        clearTimeout(timeout);
-        cleanup();
-        reject(new Error(msg.error || "Extension error"));
+    case "agent_end": {
+      const text = event.messages?.find((m: any) => m.role === "assistant")
+        ?.content?.find((c: any) => c.type === "text")?.text || "";
+      console.log(`[session:${session.id}] agent_end: "${text.slice(0, 100)}${text.length > 100 ? "..." : ""}"`);
+      // Resolve non-streaming promise
+      if (session.responseResolve) {
+        session.responseResolve(session.responseText);
+        session.responseResolve = null;
+        session.responseReject = null;
+        session.responseText = "";
       }
-    });
+      break;
+    }
+    case "message_update": {
+      const delta = event.assistantMessageEvent;
+      if (delta.type === "text_delta") {
+        session.responseText += delta.delta;
+      }
+      break;
+    }
+    case "extension_error":
+      console.error(`[session:${session.id}] extension_error: ${event.error || "unknown"}`);
+      if (session.responseReject) {
+        session.responseReject(new Error(event.error || "Extension error"));
+        session.responseResolve = null;
+        session.responseReject = null;
+        session.responseText = "";
+      }
+      break;
+    case "tool_execution_start":
+      console.log(`[session:${session.id}] tool: ${event.toolName}`);
+      break;
+    case "tool_execution_end":
+      console.log(`[session:${session.id}] tool end: ${event.toolName} (${event.isError ? "error" : "ok"})`);
+      break;
+  }
 
-    // Send the prompt command
-    const cmdId = ++requestId;
-    pendingRequests.set(cmdId, {
-      resolve: () => {},
-      reject: (err: Error) => {
-        clearTimeout(timeout);
-        cleanup();
-        reject(err);
-      },
-    });
+  resetIdleTimer(session);
+}
 
-    agentProcess.stdin!.write(
-      JSON.stringify({ type: "prompt", message, id: cmdId }) + "\n"
-    );
-  });
+function disposeSession(id: string, reason: string) {
+  const managed = sessions.get(id);
+  if (!managed) return;
+  console.log(`[session:${id}] disposing: ${reason}`);
+  managed.unsubscribe();
+  managed.session.dispose();
+  clearTimeout(managed.idleTimer);
+  clearTimeout(managed.maxLifetimeTimer);
+  // Reject any pending response
+  if (managed.responseReject) {
+    managed.responseReject(new Error(`Session disposed: ${reason}`));
+    managed.responseResolve = null;
+    managed.responseReject = null;
+  }
+  sessions.delete(id);
+}
+
+function resetIdleTimer(session: ManagedSession) {
+  clearTimeout(session.idleTimer);
+  session.idleTimer = setTimeout(() => disposeSession(session.id, "idle timeout"), SESSION_IDLE_TIMEOUT_MS);
+  session.lastActivity = Date.now();
+}
+
+function findSessionByBook(bookSlug: string): ManagedSession | undefined {
+  for (const [, s] of sessions) {
+    if (s.bookSlug === bookSlug) return s;
+  }
+  return undefined;
 }
 
 // --- HTTP server ---
@@ -284,31 +177,103 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
     return;
   }
 
+  // Health check
   if (url.pathname === "/health") {
     res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders() });
-    res.end(
-      JSON.stringify({
-        status: "healthy",
-        agentPid: agentProcess?.pid,
-        agentAlive: agentProcess && !agentProcess.killed,
-      })
-    );
+    res.end(JSON.stringify({
+      status: "healthy",
+      activeSessions: sessions.size,
+      maxSessions: MAX_SESSIONS,
+      sessions: Array.from(sessions.values()).map(s => ({
+        id: s.id,
+        bookSlug: s.bookSlug,
+        age: Math.round((Date.now() - s.createdAt) / 1000) + "s",
+        idle: Math.round((Date.now() - s.lastActivity) / 1000) + "s",
+      })),
+    }));
     return;
   }
 
-  // Non-streaming prompt — collect full response from events
-  if (url.pathname === "/api/prompt" && req.method === "POST") {
-    console.log(`[http] POST /api/prompt`);
+  // List sessions
+  if (url.pathname === "/api/sessions" && req.method === "GET") {
+    res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders() });
+    res.end(JSON.stringify({
+      sessions: Array.from(sessions.values()).map(s => ({
+        id: s.id,
+        bookSlug: s.bookSlug,
+        age: Math.round((Date.now() - s.createdAt) / 1000) + "s",
+        idle: Math.round((Date.now() - s.lastActivity) / 1000) + "s",
+      })),
+    }));
+    return;
+  }
+
+  // Create/get session for a book
+  if (url.pathname === "/api/sessions" && req.method === "POST") {
+    if (sessions.size >= MAX_SESSIONS) {
+      sendError(res, 429, `Maximum ${MAX_SESSIONS} concurrent sessions`);
+      return;
+    }
+    try {
+      const body = await readBody(req);
+      const { bookSlug, mode } = JSON.parse(body);
+      if (!bookSlug || bookSlug.includes("..") || bookSlug.includes("/") || bookSlug.includes("\\")) {
+        sendError(res, 400, "Invalid book slug");
+        return;
+      }
+      // Reuse existing session for this book
+      let managed = findSessionByBook(bookSlug);
+      if (!managed) {
+        managed = await createSession(bookSlug, mode === "write" ? "write" : "read");
+      } else {
+        resetIdleTimer(managed);
+      }
+      res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders() });
+      res.end(JSON.stringify({ sessionId: managed.id, bookSlug: managed.bookSlug }));
+    } catch (err: any) {
+      console.error("[session] create failed:", err.message);
+      sendError(res, 500, `Failed to create session: ${err.message}`);
+    }
+    return;
+  }
+
+  // Delete a session
+  const killMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)$/);
+  if (killMatch && req.method === "DELETE") {
+    disposeSession(killMatch[1], "client request");
+    res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders() });
+    res.end(JSON.stringify({ disposed: true }));
+    return;
+  }
+
+  // Non-streaming prompt
+  const promptMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/prompt$/);
+  if (promptMatch && req.method === "POST") {
+    const sessionId = promptMatch[1];
+    const managed = sessions.get(sessionId);
+    if (!managed) {
+      sendError(res, 404, "Session not found");
+      return;
+    }
     try {
       const body = await readBody(req);
       const { message } = JSON.parse(body);
-      console.log(`[http] prompt: "${message.slice(0, 80)}${message.length > 80 ? "..." : ""}" (${message.length} chars)`);
-      const result = await sendPromptAndWaitForResponse(message);
-      console.log(`[http] prompt response: ${result.length} chars`);
-      res.writeHead(200, {
-        "Content-Type": "application/json",
-        ...corsHeaders(),
+      console.log(`[session:${managed.id}] prompt: "${message.slice(0, 80)}..." (${message.length} chars)`);
+
+      // Set up promise for response collection
+      const responsePromise = new Promise<string>((resolve, reject) => {
+        managed.responseResolve = resolve;
+        managed.responseReject = reject;
+        managed.responseText = "";
       });
+
+      // Send prompt — agent_end event will resolve the promise
+      await managed.session.prompt(message);
+
+      const result = await responsePromise;
+      console.log(`[session:${managed.id}] response: ${result.length} chars`);
+
+      res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders() });
       res.end(JSON.stringify({ success: true, data: result }));
     } catch (err: any) {
       sendError(res, 500, err.message);
@@ -317,17 +282,24 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
   }
 
   // SSE streaming prompt
-  if (url.pathname === "/api/prompt/stream" && req.method === "POST") {
-    console.log(`[http] POST /api/prompt/stream`);
+  const streamMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/prompt\/stream$/);
+  if (streamMatch && req.method === "POST") {
+    const sessionId = streamMatch[1];
+    const managed = sessions.get(sessionId);
+    if (!managed) {
+      sendError(res, 404, "Session not found");
+      return;
+    }
     let body: string;
     try {
       body = await readBody(req);
     } catch (err: any) {
-      sendError(res, 400, "Failed to read request body");
+      sendError(res, 400, "Failed to read body");
       return;
     }
 
     const { message } = JSON.parse(body);
+    console.log(`[session:${managed.id}] stream prompt: "${message.slice(0, 80)}..." (${message.length} chars)`);
 
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
@@ -336,58 +308,37 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       ...corsHeaders(),
     });
 
-    const clientId = `sse-${Date.now()}`;
+    // Subscribe to session events and forward as SSE
+    const sseUnsubscribe = managed.session.subscribe((event: AgentSessionEvent) => {
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
 
-    // Register callback BEFORE sending prompt to avoid missing early events
-    eventCallbacks.set(clientId, (msg: any) => {
-      res.write(`data: ${JSON.stringify(msg)}\n\n`);
-
-      if (msg.type === "agent_end") {
+      if (event.type === "agent_end") {
         setTimeout(() => {
-          eventCallbacks.delete(clientId);
+          sseUnsubscribe();
           res.end();
         }, 500);
       }
     });
 
-    // Set a max lifetime for the SSE connection (5 min)
+    // Max lifetime for this SSE connection
     const maxLifetime = setTimeout(() => {
-      eventCallbacks.delete(clientId);
-      res.write(
-        `data: ${JSON.stringify({ type: "error", message: "Connection timed out" })}\n\n`
-      );
+      sseUnsubscribe();
+      res.write(`data: ${JSON.stringify({ type: "error", message: "Connection timed out" })}\n\n`);
       res.end();
     }, 5 * 60 * 1000);
 
-    // Clear the max lifetime when connection closes normally
     res.on("close", () => {
       clearTimeout(maxLifetime);
-      eventCallbacks.delete(clientId);
+      sseUnsubscribe();
     });
 
-    // Send prompt
+    // Send the prompt
     try {
-      const cmdId = ++requestId;
-      pendingRequests.set(cmdId, {
-        resolve: () => {},
-        reject: (err: Error) => {
-          res.write(
-            `data: ${JSON.stringify({ type: "error", message: err.message })}\n\n`
-          );
-          clearTimeout(maxLifetime);
-          eventCallbacks.delete(clientId);
-          res.end();
-        },
-      });
-      agentProcess!.stdin!.write(
-        JSON.stringify({ type: "prompt", message, id: cmdId }) + "\n"
-      );
+      await managed.session.prompt(message);
     } catch (err: any) {
-      res.write(
-        `data: ${JSON.stringify({ type: "error", message: err.message })}\n\n`
-      );
+      res.write(`data: ${JSON.stringify({ type: "error", message: err.message })}\n\n`);
       clearTimeout(maxLifetime);
-      eventCallbacks.delete(clientId);
+      sseUnsubscribe();
       res.end();
     }
     return;
@@ -400,7 +351,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
 function corsHeaders(): Record<string, string> {
   return {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
   };
 }
@@ -422,9 +373,9 @@ function sendError(res: ServerResponse, code: number, message: string) {
 // --- Graceful shutdown ---
 
 function shutdown() {
-  console.log("[bridge] shutting down...");
-  if (agentProcess && !agentProcess.killed) {
-    agentProcess.kill("SIGTERM");
+  console.log(`[bridge] shutting down, disposing ${sessions.size} sessions...`);
+  for (const [id] of sessions) {
+    disposeSession(id, "bridge shutdown");
   }
   process.exit(0);
 }
@@ -434,9 +385,7 @@ process.on("SIGINT", shutdown);
 
 // --- Start ---
 
-agentProcess = startAgent();
-
 const server = createServer(handleRequest);
 server.listen(PORT, () => {
-  console.log(`[bridge] HTTP server listening on port ${PORT}`);
+  console.log(`[bridge] SDK session manager listening on port ${PORT} (max sessions: ${MAX_SESSIONS})`);
 });
