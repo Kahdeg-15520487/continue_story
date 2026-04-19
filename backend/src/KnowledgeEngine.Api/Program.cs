@@ -39,7 +39,9 @@ builder.Services.AddTransient<ConversionJobService>();
 builder.Services.AddHttpClient<IAgentService, AgentService>();
 builder.Services.AddTransient<LoreJobService>();
 builder.Services.AddTransient<LoreAutoRetryService>();
+builder.Services.AddTransient<ChapterSplitService>();
 builder.Services.AddScoped<AgentTaskService>();
+builder.Services.AddScoped<ChapterService>();
 
 builder.Services.AddCors(options =>
 {
@@ -69,6 +71,7 @@ ChatEndpoints.Map(app);
 ChatHistoryEndpoints.Map(app);
 LoreEndpoints.Map(app);
 AgentEndpoints.Map(app);
+ChapterEndpoints.Map(app);
 
 // Hangfire recurring jobs — must use IRecurringJobManager after app.Build()
 using (var scope = app.Services.CreateScope())

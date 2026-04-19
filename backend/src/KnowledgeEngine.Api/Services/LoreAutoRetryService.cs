@@ -26,8 +26,11 @@ public class LoreAutoRetryService
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
+        // Only recover books stuck for at least 5 minutes
+        var cutoff = DateTime.UtcNow.AddMinutes(-5);
         var stuck = await db.Books
-            .Where(b => b.Status == "generating-lore" || b.Status == "error")
+            .Where(b => (b.Status == "generating-lore" || b.Status == "splitting" || b.Status == "error")
+                && b.UpdatedAt < cutoff)
             .ToListAsync();
 
         if (stuck.Count == 0) return;
@@ -36,14 +39,23 @@ public class LoreAutoRetryService
 
         foreach (var book in stuck)
         {
-            _logger.LogInformation("Auto-retrying lore for stuck book: {Slug} (status={Status})",
+            _logger.LogInformation("Auto-retrying stuck book: {Slug} (status={Status})",
                 book.Slug, book.Status);
 
-            book.Status = "generating-lore";
             book.ErrorMessage = null;
             book.UpdatedAt = DateTime.UtcNow;
 
-            jobClient.Enqueue<LoreJobService>(x => x.GenerateLoreAsync(book.Slug));
+            // If stuck at splitting, re-queue split. Otherwise re-queue lore.
+            if (book.Status == "splitting")
+            {
+                book.Status = "splitting";
+                jobClient.Enqueue<ChapterSplitService>(x => x.SplitIntoChaptersAsync(book.Slug));
+            }
+            else
+            {
+                book.Status = "generating-lore";
+                jobClient.Enqueue<LoreJobService>(x => x.GenerateLoreAsync(book.Slug));
+            }
         }
 
         await db.SaveChangesAsync();

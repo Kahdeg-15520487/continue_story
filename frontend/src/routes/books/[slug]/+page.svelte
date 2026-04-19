@@ -5,6 +5,7 @@
   import UploadZone from '$lib/components/UploadZone.svelte';
   import ChatPanel from '$lib/components/ChatPanel.svelte';
   import LorePanel from '$lib/components/LorePanel.svelte';
+  import ChapterSidebar from '$lib/components/ChapterSidebar.svelte';
   import { api } from '$lib/api';
   import type { BookDetail, ConversionStatus } from '$lib/types';
 
@@ -17,6 +18,10 @@
   let saving = $state(false);
   let showChat = $state(false);
   let showLore = $state(false);
+
+  // Chapter state
+  let activeChapterId: string | null = $state(null);
+  let chapterSidebar: ChapterSidebar | null = $state(null);
 
   // Resizable panel state — each panel tracks its own width
   let loreWidth = $state(400);
@@ -59,7 +64,7 @@
   let conversionPollInterval: ReturnType<typeof setInterval> | null = null;
 
   function startConversionPolling() {
-    if (conversionPollInterval) return; // already polling
+    if (conversionPollInterval) return;
     conversionStartTime = Date.now();
     conversionPollInterval = setInterval(async () => {
       if (!slug) { clearInterval(conversionPollInterval!); conversionPollInterval = null; return; }
@@ -75,8 +80,8 @@
         const updated = await api.getBook(slug);
         if (updated) {
           book = updated;
-          if (updated.status === 'generating-lore') {
-            // Just keep polling, don't re-call loadBook()
+          if (updated.status === 'splitting' || updated.status === 'generating-lore') {
+            // Keep polling, load content if we don't have it yet
             if (!content) {
               try {
                 const result = await api.getBookContent(slug);
@@ -88,15 +93,16 @@
             conversionPollInterval = null;
             conversionStatus = null;
             conversionStartTime = null;
-            // Refresh content without flashing loading screen
+            // Refresh without flashing
             try {
               book = await api.getBook(slug);
-              const result = await api.getBookContent(slug);
-              content = result.content;
+              await loadChapterContent();
             } catch { /* ignore */ }
           } else if (updated.status === 'error') {
             clearInterval(conversionPollInterval!);
             conversionPollInterval = null;
+            // Load whatever content is available
+            await loadChapterContent();
           }
         }
       } catch {
@@ -120,17 +126,48 @@
     }, 1000);
   }
 
+  async function loadChapterContent() {
+    if (!slug) return;
+
+    // Try chapter-based content first
+    if (activeChapterId) {
+      try {
+        const chapter = await api.getChapter(slug, activeChapterId);
+        if (chapter) {
+          content = chapter.content;
+          return;
+        }
+      } catch { /* chapter not found */ }
+    }
+
+    // Fallback: try listing chapters and loading first one
+    try {
+      const chapters = await api.listChapters(slug);
+      if (chapters.length > 0) {
+        activeChapterId = chapters[0].id;
+        const chapter = await api.getChapter(slug, activeChapterId);
+        if (chapter) {
+          content = chapter.content;
+          return;
+        }
+      }
+    } catch { /* no chapters yet */ }
+
+    // Final fallback: load book.md
+    try {
+      const result = await api.getBookContent(slug);
+      content = result.content;
+    } catch { /* no content at all */ }
+  }
+
   async function loadBook() {
     loading = true;
     error = '';
     try {
       book = await api.getBook(slug);
-      if (book.status === 'ready' || book.status === 'lore-ready' || book.status === 'generating-lore' || book.status === 'error') {
-        try {
-          const result = await api.getBookContent(slug);
-          content = result.content;
-        } catch { /* no content yet */ }
-        if (book.status === 'generating-lore') {
+      if (book.status === 'ready' || book.status === 'lore-ready' || book.status === 'splitting' || book.status === 'generating-lore' || book.status === 'error') {
+        await loadChapterContent();
+        if (book.status === 'splitting' || book.status === 'generating-lore') {
           startConversionPolling();
         }
       } else if (book.status === 'converting') {
@@ -144,16 +181,30 @@
   }
 
   async function saveContent(newContent: string) {
-    if (saving || !isEditing) return;
+    if (saving || !isEditing || !slug) return;
     saving = true;
     try {
-      await api.saveBookContent(slug, newContent);
+      if (activeChapterId) {
+        await api.saveChapter(slug, activeChapterId, newContent);
+      } else {
+        await api.saveBookContent(slug, newContent);
+      }
       content = newContent;
+      chapterSidebar?.refresh();
     } catch (err) {
       console.error('Save failed:', err);
     } finally {
       saving = false;
     }
+  }
+
+  async function handleChapterSelect(id: string) {
+    activeChapterId = id;
+    if (!slug) return;
+    try {
+      const chapter = await api.getChapter(slug, id);
+      if (chapter) content = chapter.content;
+    } catch { /* ignore */ }
   }
 
   onMount(loadBook);
@@ -183,12 +234,12 @@
       <a href="/" class="back-link">← Library</a>
       <h2 class="book-title">{book.title}</h2>
       <div class="toolbar-actions">
-          <button class="btn" onclick={() => isEditing = !isEditing}>
-            {isEditing ? '🔒 Lock' : '✏️ Edit'}
-          </button>
-          {#if saving}
-            <span class="status-saving">Saving...</span>
-          {/if}
+        <button class="btn" onclick={() => isEditing = !isEditing}>
+          {isEditing ? '🔒 Lock' : '✏️ Edit'}
+        </button>
+        {#if saving}
+          <span class="status-saving">Saving...</span>
+        {/if}
         <button class="btn" onclick={() => showLore = !showLore}>
           📖 Wiki
         </button>
@@ -205,19 +256,24 @@
     {/if}
 
     <div class="main-area">
-      <div class="editor-pane">
-        {#if book.status === 'ready' || book.status === 'lore-ready'}
-          <BookEditor
-            bind:content
-            readonly={!isEditing}
-            onContentChange={(md) => { if (isEditing) debouncedSave(md); }}
-          />
-        {:else if book.status === 'generating-lore'}
-          {#if content}
+      {#if book.status === 'ready' || book.status === 'lore-ready' || book.status === 'splitting' || book.status === 'generating-lore'}
+        <!-- Chapter sidebar -->
+        <ChapterSidebar bind:this={chapterSidebar} {slug} bind:activeChapterId onChapterSelect={handleChapterSelect} />
+
+        <div class="editor-pane">
+          {#if book.status === 'splitting'}
+            <div class="lore-banner">
+              <div class="spinner-small"></div>
+              <span>Splitting into chapters...</span>
+            </div>
+          {:else if book.status === 'generating-lore'}
             <div class="lore-banner">
               <div class="spinner-small"></div>
               <span>Generating wiki in the background...</span>
             </div>
+          {/if}
+
+          {#if content}
             <BookEditor
               bind:content
               readonly={!isEditing}
@@ -225,21 +281,19 @@
             />
           {:else}
             <div class="status-section">
-              <div class="conversion-panel">
-                <div class="conversion-header">
-                  <div class="spinner"></div>
-                  <h3>Generating wiki</h3>
-                </div>
-                <p class="status-message">The book has been converted. Analyzing content to extract characters, locations, themes, and plot summary...</p>
-              </div>
+              <p class="status-message">No content available yet.</p>
             </div>
           {/if}
-        {:else if book.status === 'pending'}
+        </div>
+      {:else if book.status === 'pending'}
+        <div class="editor-pane">
           <div class="status-section">
             <p class="status-message">Upload a file to convert to markdown.</p>
             <UploadZone {slug} onUploaded={handleUploaded} />
           </div>
-        {:else if book.status === 'converting'}
+        </div>
+      {:else if book.status === 'converting'}
+        <div class="editor-pane">
           <div class="status-section">
             <div class="conversion-panel">
               <div class="conversion-header">
@@ -286,12 +340,15 @@
               {/if}
             </div>
           </div>
-        {:else}
+        </div>
+      {:else if book.status === 'error'}
+        <div class="editor-pane">
           {#if content}
             <div class="error-banner">
               <span>⚠️ {book.errorMessage || `Error: ${book.status}`}</span>
-              <button class="btn btn-retry" onclick={async () => { await api.triggerLoreGeneration(slug); startConversionPolling(); }}>Retry wiki generation</button>
+              <button class="btn btn-retry" onclick={async () => { await api.triggerLoreGeneration(slug); startConversionPolling(); }}>Retry</button>
             </div>
+            <ChapterSidebar bind:this={chapterSidebar} {slug} bind:activeChapterId onChapterSelect={handleChapterSelect} />
             <BookEditor
               bind:content
               readonly={!isEditing}
@@ -305,8 +362,8 @@
               <UploadZone {slug} onUploaded={handleUploaded} />
             </div>
           {/if}
-        {/if}
-      </div>
+        </div>
+      {/if}
 
       {#if showLore}
         <div class="resize-handle" role="separator" onmousedown={startResize('lore')}></div>
@@ -389,6 +446,8 @@
   .editor-pane {
     flex: 1;
     overflow-y: auto;
+    display: flex;
+    flex-direction: column;
   }
 
   .status-section {
@@ -402,10 +461,6 @@
   .status-message {
     color: var(--text-secondary);
     font-size: 14px;
-  }
-
-  .status-message.converting {
-    color: var(--accent);
   }
 
   .status-message.error {
@@ -423,20 +478,6 @@
 
   @keyframes spin {
     to { transform: rotate(360deg); }
-  }
-
-  .btn-secondary {
-    padding: 6px 16px;
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    color: var(--text-primary);
-    cursor: pointer;
-    font-size: 13px;
-  }
-
-  .btn-secondary:hover {
-    opacity: 0.8;
   }
 
   .conversion-panel {
@@ -571,6 +612,7 @@
     border-bottom: 1px solid rgba(56, 139, 253, 0.2);
     color: #79c0ff;
     font-size: 12px;
+    flex-shrink: 0;
   }
 
   .spinner-small {

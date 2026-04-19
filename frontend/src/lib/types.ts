@@ -84,3 +84,17 @@ export interface AgentTaskInfo {
   errorMessage: string | null;
   updatedAt: string;
 }
+
+export interface ChapterInfo {
+  id: string;
+  number: number;
+  title: string;
+  wordCount: number;
+  fileName: string;
+}
+
+export interface ChapterContent {
+  id: string;
+  title: string;
+  content: string;
+}

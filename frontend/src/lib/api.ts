@@ -69,6 +69,36 @@ export const api = {
       method: 'DELETE',
     }),
 
+  // Chapters
+  listChapters: (slug: string) =>
+    request<Array<{ id: string; number: number; title: string; wordCount: number; fileName: string }>>(`/books/${slug}/chapters`),
+
+  getChapter: (slug: string, id: string) =>
+    request<{ id: string; title: string; content: string }>(`/books/${slug}/chapters/${encodeURIComponent(id)}`),
+
+  saveChapter: (slug: string, id: string, content: string) =>
+    request<{ saved: boolean }>(`/books/${slug}/chapters/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ content }),
+    }),
+
+  insertChapter: (slug: string, title: string, afterChapterId?: string) =>
+    request<{ id: string; number: number; title: string; wordCount: number; fileName: string }>(`/books/${slug}/chapters`, {
+      method: 'POST',
+      body: JSON.stringify({ title, afterChapterId }),
+    }),
+
+  deleteChapter: (slug: string, id: string) =>
+    request<{ deleted: boolean }>(`/books/${slug}/chapters/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    }),
+
+  reorderChapters: (slug: string, orderedIds: string[]) =>
+    request<{ reordered: boolean }>(`/books/${slug}/chapters/reorder`, {
+      method: 'POST',
+      body: JSON.stringify({ orderedIds }),
+    }),
+
   // Agent session management
   ensureAgentSession: (bookSlug: string, mode: string = 'read') =>
     request<{ sessionId: string; bookSlug: string; mode: string; messageCount: number }>('/agent/session', {

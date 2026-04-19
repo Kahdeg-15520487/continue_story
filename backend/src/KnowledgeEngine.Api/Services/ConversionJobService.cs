@@ -50,8 +50,8 @@ public class ConversionJobService
                 _logger.LogInformation("Book marked as ready: Slug={Slug} ({Size} bytes)", book.Slug, info.Length);
 
                 var jobClient = scope.ServiceProvider.GetRequiredService<IBackgroundJobClient>();
-                jobClient.Enqueue<LoreJobService>(x => x.GenerateLoreAsync(book.Slug));
-                _logger.LogInformation("Lore generation auto-triggered for {Slug}", book.Slug);
+                jobClient.Enqueue<ChapterSplitService>(x => x.SplitIntoChaptersAsync(book.Slug));
+                _logger.LogInformation("Chapter splitting auto-triggered for {Slug}", book.Slug);
             }
             else
             {
