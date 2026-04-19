@@ -112,6 +112,27 @@ function handleAgentMessage(msg: any) {
   }
 
   // All other messages are events — forward to SSE subscribers
+  if (msg.type === "agent_start") {
+    console.log(`[event] agent started`);
+  } else if (msg.type === "message_update") {
+    const delta = msg.assistantMessageEvent;
+    if (delta?.type === "text_delta") {
+      // Don't log every delta, too noisy
+    } else if (delta?.type === "thinking_delta") {
+      // Reasoning model — skip
+    } else if (delta?.type === "thinking_start") {
+      console.log(`[event] thinking started`);
+    } else {
+      console.log(`[event] message_update type=${delta?.type || "unknown"}`);
+    }
+  } else if (msg.type === "agent_end") {
+    const assistantMsg = msg.messages?.find((m: any) => m.role === "assistant");
+    const text = assistantMsg?.content?.find((c: any) => c.type === "text")?.text || "";
+    const errMsg = assistantMsg?.errorMessage;
+    console.log(`[event] agent_end: ${errMsg ? "ERROR: " + errMsg : `"${text.slice(0, 80)}${text.length > 80 ? "..." : ""}"`}`);
+  } else {
+    console.log(`[event] ${msg.type}`);
+  }
   for (const callback of eventCallbacks.values()) {
     callback(msg);
   }
@@ -226,10 +247,13 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
 
   // Non-streaming prompt — collect full response from events
   if (url.pathname === "/api/prompt" && req.method === "POST") {
+    console.log(`[http] POST /api/prompt`);
     try {
       const body = await readBody(req);
       const { message } = JSON.parse(body);
+      console.log(`[http] prompt: "${message.slice(0, 80)}${message.length > 80 ? "..." : ""}" (${message.length} chars)`);
       const result = await sendPromptAndWaitForResponse(message);
+      console.log(`[http] prompt response: ${result.length} chars`);
       res.writeHead(200, {
         "Content-Type": "application/json",
         ...corsHeaders(),
@@ -243,6 +267,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
 
   // SSE streaming prompt
   if (url.pathname === "/api/prompt/stream" && req.method === "POST") {
+    console.log(`[http] POST /api/prompt/stream`);
     let body: string;
     try {
       body = await readBody(req);
