@@ -21,10 +21,14 @@ var hangfireConnectionString = builder.Configuration.GetConnectionString("Hangfi
     ?? builder.Configuration.GetConnectionString("Default")
     ?? "Data Source=/data/hangfire.db";
 
-builder.Services.AddHangfire(config => config
-    .UseSimpleAssemblyNameTypeSerializer()
-    .UseRecommendedSerializerSettings()
-    .UseSQLiteStorage(hangfireConnectionString));
+builder.Services.AddHangfire(config =>
+{
+    config
+        .UseSimpleAssemblyNameTypeSerializer()
+        .UseRecommendedSerializerSettings()
+        .UseSQLiteStorage(hangfireConnectionString);
+    GlobalJobFilters.Filters.Add(new AutomaticRetryAttribute { Attempts = 0 });
+});
 builder.Services.AddHangfireServer();
 
 // Conversion service
