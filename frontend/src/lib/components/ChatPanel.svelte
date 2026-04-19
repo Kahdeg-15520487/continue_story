@@ -4,7 +4,7 @@
 
   let { slug }: { slug: string } = $props();
 
-  let messages: Array<{ role: 'user' | 'assistant'; text: string }> = $state([]);
+  let messages: Array<{ role: 'user' | 'assistant'; text: string; thinking?: string }> = $state([]);
   let input = $state('');
   let streaming = $state(false);
   let currentResponse = $state('');
@@ -39,7 +39,7 @@
       },
       () => {
         if (currentResponse) {
-          messages = [...messages, { role: 'assistant', text: currentResponse }];
+          messages = [...messages, { role: 'assistant', text: currentResponse, thinking: thinkingText || undefined }];
         }
         currentResponse = '';
         thinkingText = '';
@@ -47,6 +47,9 @@
       },
       (err) => {
         chatError = err;
+      },
+      (thinking) => {
+        thinkingText = '';
       },
       (thinking) => {
         thinkingText += thinking;
@@ -77,6 +80,12 @@
     {#each messages as msg}
       <div class="message" class:user={msg.role === 'user'} class:assistant={msg.role === 'assistant'}>
         <div class="message-role">{msg.role === 'user' ? 'You' : 'AI'}</div>
+        {#if msg.role === 'assistant' && msg.thinking}
+          <details class="thinking-section thinking-done">
+            <summary class="thinking-summary">Thought process ({msg.thinking.length} chars)</summary>
+            <pre class="thinking-text">{msg.thinking}</pre>
+          </details>
+        {/if}
         {#if msg.role === 'assistant'}
           <div class="message-text markdown">{@html renderMarkdown(msg.text)}</div>
         {:else}
