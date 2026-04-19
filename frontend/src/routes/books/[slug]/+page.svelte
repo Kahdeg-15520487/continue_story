@@ -77,10 +77,13 @@
     error = '';
     try {
       book = await api.getBook(slug);
-      if (book.status === 'ready' || book.status === 'lore-ready') {
+      if (book.status === 'ready' || book.status === 'lore-ready' || book.status === 'generating-lore') {
         const result = await api.getBookContent(slug);
         content = result.content;
-      } else if (book.status === 'converting' || book.status === 'generating-lore') {
+        if (book.status === 'generating-lore') {
+          startConversionPolling();
+        }
+      } else if (book.status === 'converting') {
         startConversionPolling();
       }
     } catch (err: any) {
@@ -142,20 +145,32 @@
             readonly={!isEditing}
             onContentChange={(md) => { if (isEditing) debouncedSave(md); }}
           />
+        {:else if book.status === 'generating-lore'}
+          {#if content}
+            <div class="lore-banner">
+              <div class="spinner-small"></div>
+              <span>Generating wiki in the background...</span>
+            </div>
+            <BookEditor
+              bind:content
+              readonly={!isEditing}
+              onContentChange={(md) => { if (isEditing) debouncedSave(md); }}
+            />
+          {:else}
+            <div class="status-section">
+              <div class="conversion-panel">
+                <div class="conversion-header">
+                  <div class="spinner"></div>
+                  <h3>Generating wiki</h3>
+                </div>
+                <p class="status-message">The book has been converted. Analyzing content to extract characters, locations, themes, and plot summary...</p>
+              </div>
+            </div>
+          {/if}
         {:else if book.status === 'pending'}
           <div class="status-section">
             <p class="status-message">Upload a file to convert to markdown.</p>
             <UploadZone {slug} onUploaded={handleUploaded} />
-          </div>
-        {:else if book.status === 'generating-lore'}
-          <div class="status-section">
-            <div class="conversion-panel">
-              <div class="conversion-header">
-                <div class="spinner"></div>
-                <h3>Generating wiki</h3>
-              </div>
-              <p class="status-message">The book has been converted. Analyzing content to extract characters, locations, themes, and plot summary...</p>
-            </div>
           </div>
         {:else if book.status === 'converting'}
           <div class="status-section">
@@ -440,5 +455,26 @@
     border-left: 1px solid var(--border);
     background: var(--bg-secondary);
     overflow-y: auto;
+  }
+
+  .lore-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 16px;
+    background: rgba(56, 139, 253, 0.1);
+    border-bottom: 1px solid rgba(56, 139, 253, 0.2);
+    color: #79c0ff;
+    font-size: 12px;
+  }
+
+  .spinner-small {
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(56, 139, 253, 0.3);
+    border-top-color: #58a6ff;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    flex-shrink: 0;
   }
 </style>
