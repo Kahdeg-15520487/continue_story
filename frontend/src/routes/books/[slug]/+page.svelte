@@ -40,7 +40,7 @@
         const updated = await api.getBook(slug);
         if (updated) {
           book = updated;
-          if (updated.status === 'ready') {
+          if (updated.status === 'ready' || updated.status === 'lore-ready') {
             clearInterval(conversionPollInterval!);
             conversionPollInterval = null;
             conversionStatus = null;
@@ -77,10 +77,10 @@
     error = '';
     try {
       book = await api.getBook(slug);
-      if (book.status === 'ready') {
+      if (book.status === 'ready' || book.status === 'lore-ready') {
         const result = await api.getBookContent(slug);
         content = result.content;
-      } else if (book.status === 'converting') {
+      } else if (book.status === 'converting' || book.status === 'generating-lore') {
         startConversionPolling();
       }
     } catch (err: any) {
@@ -136,7 +136,7 @@
 
     <div class="main-area">
       <div class="editor-pane">
-        {#if book.status === 'ready'}
+        {#if book.status === 'ready' || book.status === 'lore-ready'}
           <BookEditor
             bind:content
             readonly={!isEditing}
@@ -146,6 +146,16 @@
           <div class="status-section">
             <p class="status-message">Upload a file to convert to markdown.</p>
             <UploadZone {slug} onUploaded={handleUploaded} />
+          </div>
+        {:else if book.status === 'generating-lore'}
+          <div class="status-section">
+            <div class="conversion-panel">
+              <div class="conversion-header">
+                <div class="spinner"></div>
+                <h3>Generating wiki</h3>
+              </div>
+              <p class="status-message">The book has been converted. Analyzing content to extract characters, locations, themes, and plot summary...</p>
+            </div>
           </div>
         {:else if book.status === 'converting'}
           <div class="status-section">
@@ -197,7 +207,7 @@
         {:else}
           <div class="status-section">
             <p class="status-message error">
-              Conversion failed{book.errorMessage ? `: ${book.errorMessage}` : ''}
+              {book.errorMessage || `Unknown status: ${book.status}`}
             </p>
             <UploadZone {slug} onUploaded={handleUploaded} />
           </div>

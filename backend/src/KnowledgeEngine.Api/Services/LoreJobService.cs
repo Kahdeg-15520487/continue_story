@@ -45,12 +45,7 @@ public class LoreJobService
             return;
         }
 
-        // Guard: currently generating (Hangfire retry while first attempt is still running)
-        if (book.Status == "generating-lore")
-        {
-            _logger.LogInformation("Lore already being generated for {Slug}, skipping retry", slug);
-            return;
-        }
+        // Stale generating-lore: allow retry (container may have restarted mid-generation)
 
         if (!File.Exists(bookMd) || new FileInfo(bookMd).Length == 0)
         {
