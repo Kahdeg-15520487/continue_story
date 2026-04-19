@@ -193,8 +193,10 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
         sendError(res, 400, "Invalid book slug");
         return;
       }
-      // Reuse existing session for this book
-      let managed = Array.from(sessions.values()).find(s => s.bookSlug === bookSlug);
+      // Reuse existing read session; always create fresh write session
+      let managed = mode !== "write"
+        ? Array.from(sessions.values()).find(s => s.bookSlug === bookSlug)
+        : undefined;
       if (!managed) {
         managed = await createSession(bookSlug, mode === "write" ? "write" : "read");
       } else {
