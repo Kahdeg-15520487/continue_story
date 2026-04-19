@@ -18,46 +18,80 @@ public class LoreJobService
         _scopeFactory = scopeFactory;
     }
 
-    // Hangfire job — triggers lore generation
     public async Task GenerateLoreAsync(string slug)
     {
-        // Create a new scope for Hangfire background execution
         using var scope = _scopeFactory.CreateScope();
         var agentService = scope.ServiceProvider.GetRequiredService<IAgentService>();
+        var db = scope.ServiceProvider.GetRequiredService<KnowledgeEngine.Api.Data.AppDbContext>();
 
         _logger.LogInformation("Generating lore for book: Slug={Slug}", slug);
 
         var libraryPath = _config.GetValue<string>("Library:Path") ?? "/library";
         var bookMd = Path.Combine(libraryPath, slug, "book.md");
 
-        if (!File.Exists(bookMd) || new FileInfo(bookMd).Length == 0)
+        var book = await db.Books.FirstOrDefaultAsync(b => b.Slug == slug);
+        if (book is null)
         {
-            _logger.LogError("Book content not found or empty: {BookPath}", bookMd);
-            // Update book status to error
-            var db = scope.ServiceProvider.GetRequiredService<KnowledgeEngine.Api.Data.AppDbContext>();
-            var book = await db.Books.FirstOrDefaultAsync(b => b.Slug == slug);
-            if (book is not null)
-            {
-                book.Status = "error";
-                book.ErrorMessage = "Cannot generate lore: book has no content";
-                book.UpdatedAt = DateTime.UtcNow;
-                await db.SaveChangesAsync();
-            }
+            _logger.LogError("Book not found in DB: {Slug}", slug);
             return;
         }
 
-        var prompt = $"Read the book at {bookMd} and extract the lore. Generate a character list in {Path.Combine(libraryPath, slug, "wiki", "characters.md")}, locations in {Path.Combine(libraryPath, slug, "wiki", "locations.md")}, themes in {Path.Combine(libraryPath, slug, "wiki", "themes.md")}, and a plot summary in {Path.Combine(libraryPath, slug, "wiki", "summary.md")}.";
+        if (!File.Exists(bookMd) || new FileInfo(bookMd).Length == 0)
+        {
+            book.Status = "error";
+            book.ErrorMessage = "Cannot generate lore: book has no content";
+            book.UpdatedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+            _logger.LogError("Lore generation skipped: no book.md for {Slug}", slug);
+            return;
+        }
+
+        var wikiDir = Path.Combine(libraryPath, slug, "wiki");
+        Directory.CreateDirectory(wikiDir);
+
+        book.Status = "generating-lore";
+        book.ErrorMessage = null;
+        book.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+
+        var prompt = $"Read the book at book.md and extract lore using the lore-extraction skill. " +
+            $"Generate wiki files in the wiki/ directory: characters.md, locations.md, themes.md, and summary.md. " +
+            $"Follow the skill's output format exactly. The working directory is {Path.Combine(libraryPath, slug)}";
 
         try
         {
             var sessionId = await agentService.EnsureSessionAsync(slug, "write");
             await agentService.SendPromptAsync(sessionId, prompt);
-            _logger.LogInformation("Lore generation complete for book: {Slug}", slug);
+
+            var expectedFiles = new[] { "characters.md", "locations.md", "themes.md", "summary.md" };
+            var createdFiles = expectedFiles
+                .Where(f => File.Exists(Path.Combine(wikiDir, f)))
+                .ToList();
+
+            if (createdFiles.Count == 0)
+            {
+                book.Status = "error";
+                book.ErrorMessage = "Lore generation completed but no wiki files were created. The agent may not have followed instructions.";
+                book.UpdatedAt = DateTime.UtcNow;
+                await db.SaveChangesAsync();
+                _logger.LogError("Lore generation produced no files for {Slug}", slug);
+                return;
+            }
+
+            book.Status = "lore-ready";
+            book.ErrorMessage = null;
+            book.UpdatedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+            _logger.LogInformation("Lore generation complete for {Slug}: {Count} wiki files ({Files})",
+                slug, createdFiles.Count, string.Join(", ", createdFiles));
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Lore generation failed for book: {Slug}", slug);
-            throw;
+            book.Status = "error";
+            book.ErrorMessage = $"Lore generation failed: {ex.Message}";
+            book.UpdatedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+            _logger.LogError(ex, "Lore generation failed for {Slug}", slug);
         }
     }
 }
