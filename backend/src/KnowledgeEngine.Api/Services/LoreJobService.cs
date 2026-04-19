@@ -18,6 +18,7 @@ public class LoreJobService
         _scopeFactory = scopeFactory;
     }
 
+    [Hangfire.AutomaticRetry(Attempts = 0)]
     public async Task GenerateLoreAsync(string slug)
     {
         using var scope = _scopeFactory.CreateScope();
