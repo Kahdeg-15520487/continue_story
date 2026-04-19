@@ -49,7 +49,7 @@
         chatError = err;
       },
       (thinking) => {
-        thinkingText = thinking;
+        thinkingText += thinking;
       }
     );
   }
