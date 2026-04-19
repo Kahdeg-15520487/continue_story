@@ -29,7 +29,7 @@ builder.Services.AddHangfire(config =>
         .UseSQLiteStorage(hangfireConnectionString);
     GlobalJobFilters.Filters.Add(new AutomaticRetryAttribute { Attempts = 0 });
 });
-builder.Services.AddHangfireServer();
+builder.Services.AddHangfireServer(options => options.WorkerCount = 1);
 
 // Conversion service
 builder.Services.AddSingleton<IConversionService, ConversionService>();
