@@ -18,30 +18,35 @@
   let showChat = $state(false);
   let showLore = $state(false);
 
-  // Resizable panel state
-  let panelWidth = $state(400); // px
-  let resizing = false;
-  let resizeX = 0;
-  let resizeStartWidth = 0;
+  // Resizable panel state — each panel tracks its own width
+  let loreWidth = $state(400);
+  let chatWidth = $state(400);
+  let activeResize: { key: 'lore' | 'chat'; x: number; startWidth: number } | null = null;
 
-  function startResize(e: MouseEvent) {
-    resizing = true;
-    resizeX = e.clientX;
-    resizeStartWidth = panelWidth;
-    document.addEventListener('mousemove', onResize);
-    document.addEventListener('mouseup', stopResize);
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
+  function startResize(key: 'lore' | 'chat') {
+    return (e: MouseEvent) => {
+      activeResize = {
+        key,
+        x: e.clientX,
+        startWidth: key === 'lore' ? loreWidth : chatWidth,
+      };
+      document.addEventListener('mousemove', onResize);
+      document.addEventListener('mouseup', stopResize);
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    };
   }
 
   function onResize(e: MouseEvent) {
-    if (!resizing) return;
-    const dx = resizeX - e.clientX; // dragging left = panel gets wider
-    panelWidth = Math.max(280, Math.min(800, resizeStartWidth + dx));
+    if (!activeResize) return;
+    const dx = activeResize.x - e.clientX;
+    const next = Math.max(280, Math.min(800, activeResize.startWidth + dx));
+    if (activeResize.key === 'lore') loreWidth = next;
+    else chatWidth = next;
   }
 
   function stopResize() {
-    resizing = false;
+    activeResize = null;
     document.removeEventListener('mousemove', onResize);
     document.removeEventListener('mouseup', stopResize);
     document.body.style.cursor = '';
@@ -277,15 +282,15 @@
       </div>
 
       {#if showLore}
-        <div class="resize-handle" role="separator" onmousedown={startResize}></div>
-        <div class="side-panel" style="width: {panelWidth}px; min-width: {panelWidth}px;">
+        <div class="resize-handle" role="separator" onmousedown={startResize('lore')}></div>
+        <div class="side-panel" style="width: {loreWidth}px; min-width: {loreWidth}px;">
           <LorePanel {slug} />
         </div>
       {/if}
 
       {#if showChat}
-        <div class="resize-handle" role="separator" onmousedown={startResize}></div>
-        <div class="side-panel" style="width: {panelWidth}px; min-width: {panelWidth}px;">
+        <div class="resize-handle" role="separator" onmousedown={startResize('chat')}></div>
+        <div class="side-panel" style="width: {chatWidth}px; min-width: {chatWidth}px;">
           <ChatPanel {slug} />
         </div>
       {/if}
