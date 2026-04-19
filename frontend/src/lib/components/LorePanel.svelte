@@ -18,6 +18,7 @@
     'locations.md': 'Locations',
     'themes.md': 'Themes',
     'summary.md': 'Summary',
+    'chapter-summaries.md': 'Chapters',
   };
 
   const fileIcons: Record<string, string> = {
@@ -25,6 +26,7 @@
     'locations.md': '📍',
     'themes.md': '💡',
     'summary.md': '📖',
+    'chapter-summaries.md': '📑',
   };
 
   function renderMarkdown(md: string) {

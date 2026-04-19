@@ -60,7 +60,7 @@ public class LoreJobService
 
         Directory.CreateDirectory(wikiDir);
 
-        var expectedFiles = new[] { "characters.md", "locations.md", "themes.md", "summary.md" };
+        var expectedFiles = new[] { "characters.md", "locations.md", "themes.md", "summary.md", "chapter-summaries.md" };
 
         // Load existing checkpoints
         var checkpoints = await db.LoreCheckpoints
@@ -118,9 +118,20 @@ public class LoreJobService
 
         // Build prompt listing only missing files
         var fileList = string.Join(", ", filesToGenerate);
+        var chaptersDir = Path.Combine(libraryPath, slug, "chapters");
+        var hasChapters = Directory.Exists(chaptersDir) && Directory.GetFiles(chaptersDir, "ch-*.md").Length > 0;
+
         var prompt = $"Read the book at book.md and extract lore using the lore-extraction skill. " +
             $"Generate these wiki files in the wiki/ directory: {fileList}. " +
-            $"Follow the skill's output format exactly. The working directory is {Path.Combine(libraryPath, slug)}";
+            $"Follow the skill's output format exactly.";
+
+        if (hasChapters && filesToGenerate.Contains("chapter-summaries.md"))
+        {
+            prompt += " For chapter-summaries.md, read each chapter file in the chapters/ directory and write a 2-3 sentence summary for each chapter. " +
+                "Format: ## Chapter N: Title\n\n followed by the summary.";
+        }
+
+        prompt += $" The working directory is {Path.Combine(libraryPath, slug)}";
 
         try
         {

@@ -31,12 +31,47 @@ public static class ChatEndpoints
             var libraryPath = config.GetValue<string>("Library:Path") ?? "/library";
             var bookMd = Path.Combine(libraryPath, req.BookSlug, "book.md");
             var wikiDir = Path.Combine(libraryPath, req.BookSlug, "wiki");
+            var chaptersDir = Path.Combine(libraryPath, req.BookSlug, "chapters");
 
-            // Build context from book + wiki files
+            // Build context from chapters + wiki files
             var contextParts = new List<string>();
 
-            if (File.Exists(bookMd))
+            // Chapter list for navigation context
+            if (Directory.Exists(chaptersDir))
             {
+                var chapterFiles = Directory.GetFiles(chaptersDir, "ch-*.md").OrderBy(f => f).ToList();
+                if (chapterFiles.Count > 0)
+                {
+                    var chapterList = new System.Text.StringBuilder("# Chapters\n\n");
+                    for (int i = 0; i < chapterFiles.Count; i++)
+                    {
+                        var chContent = await File.ReadAllTextAsync(chapterFiles[i], ct);
+                        var title = chContent.Split('\n').FirstOrDefault(l => l.StartsWith("# "))?.Substring(2) ?? $"Chapter {i + 1}";
+                        chapterList.AppendLine($"{i + 1}. {title} ({Path.GetFileName(chapterFiles[i])})");
+                    }
+                    contextParts.Add(chapterList.ToString());
+
+                    // If user mentions a specific chapter, include its content
+                    if (!string.IsNullOrEmpty(req.Message))
+                    {
+                        var msgLower = req.Message.ToLowerInvariant();
+                        for (int i = 0; i < chapterFiles.Count; i++)
+                        {
+                            var chContent = await File.ReadAllTextAsync(chapterFiles[i], ct);
+                            var title = chContent.Split('\n').FirstOrDefault(l => l.StartsWith("# "))?.Substring(2) ?? $"Chapter {i + 1}";
+                            if (msgLower.Contains($"chapter {i + 1}") || msgLower.Contains(title.ToLowerInvariant()))
+                            {
+                                var truncated = chContent.Length > 15_000 ? chContent[..15_000] + "\n[... truncated ...]" : chContent;
+                                contextParts.Add($"# Active Chapter: {title}\n\n{truncated}");
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            else if (File.Exists(bookMd))
+            {
+                // No chapters — use full book.md
                 var content = await File.ReadAllTextAsync(bookMd, ct);
                 if (content.Length > 50_000)
                     content = content[..50_000] + "\n\n[... truncated ...]";
