@@ -38,6 +38,7 @@ builder.Services.AddTransient<ConversionJobService>();
 // Agent service
 builder.Services.AddHttpClient<IAgentService, AgentService>();
 builder.Services.AddTransient<LoreJobService>();
+builder.Services.AddTransient<LoreAutoRetryService>();
 builder.Services.AddScoped<AgentTaskService>();
 
 builder.Services.AddCors(options =>
@@ -69,16 +70,32 @@ ChatHistoryEndpoints.Map(app);
 LoreEndpoints.Map(app);
 AgentEndpoints.Map(app);
 
+// Hangfire recurring jobs — must use IRecurringJobManager after app.Build()
+using (var scope = app.Services.CreateScope())
+{
+    var recurring = scope.ServiceProvider.GetRequiredService<IRecurringJobManager>();
+    recurring.AddOrUpdate<LoreAutoRetryService>(
+        "lore-auto-retry",
+        x => x.RecoverStuckAsync(),
+        "*/10 * * * *"); // every 10 minutes
+
+    recurring.AddOrUpdate<SessionCleanupService>(
+        "session-cleanup",
+        x => x.CleanupAsync(),
+        "0 3 * * *");
+}
+
 if (app.Environment.IsDevelopment())
     app.UseHangfireDashboard("/hangfire", new DashboardOptions
     {
         Authorization = [] // No auth in development
     });
 
-    // Periodic session cleanup (daily at 3 AM)
-    RecurringJob.AddOrUpdate<SessionCleanupService>(
-        "session-cleanup",
-        x => x.CleanupAsync(),
-        "0 3 * * *");
+// Startup: recover any books stuck mid-generation
+using (var scope = app.Services.CreateScope())
+{
+    var autoRetry = scope.ServiceProvider.GetRequiredService<LoreAutoRetryService>();
+    await autoRetry.RecoverStuckAsync();
+}
 
 app.Run();

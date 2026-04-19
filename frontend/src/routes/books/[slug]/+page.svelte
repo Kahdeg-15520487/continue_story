@@ -75,12 +75,25 @@
         const updated = await api.getBook(slug);
         if (updated) {
           book = updated;
-          if (updated.status === 'ready' || updated.status === 'lore-ready' || updated.status === 'generating-lore') {
+          if (updated.status === 'generating-lore') {
+            // Just keep polling, don't re-call loadBook()
+            if (!content) {
+              try {
+                const result = await api.getBookContent(slug);
+                content = result.content;
+              } catch { /* not ready yet */ }
+            }
+          } else if (updated.status === 'ready' || updated.status === 'lore-ready') {
             clearInterval(conversionPollInterval!);
             conversionPollInterval = null;
             conversionStatus = null;
             conversionStartTime = null;
-            await loadBook();
+            // Refresh content without flashing loading screen
+            try {
+              book = await api.getBook(slug);
+              const result = await api.getBookContent(slug);
+              content = result.content;
+            } catch { /* ignore */ }
           } else if (updated.status === 'error') {
             clearInterval(conversionPollInterval!);
             conversionPollInterval = null;
@@ -112,9 +125,11 @@
     error = '';
     try {
       book = await api.getBook(slug);
-      if (book.status === 'ready' || book.status === 'lore-ready' || book.status === 'generating-lore') {
-        const result = await api.getBookContent(slug);
-        content = result.content;
+      if (book.status === 'ready' || book.status === 'lore-ready' || book.status === 'generating-lore' || book.status === 'error') {
+        try {
+          const result = await api.getBookContent(slug);
+          content = result.content;
+        } catch { /* no content yet */ }
         if (book.status === 'generating-lore') {
           startConversionPolling();
         }
@@ -272,12 +287,24 @@
             </div>
           </div>
         {:else}
-          <div class="status-section">
-            <p class="status-message error">
-              {book.errorMessage || `Unknown status: ${book.status}`}
-            </p>
-            <UploadZone {slug} onUploaded={handleUploaded} />
-          </div>
+          {#if content}
+            <div class="error-banner">
+              <span>⚠️ {book.errorMessage || `Error: ${book.status}`}</span>
+              <button class="btn btn-retry" onclick={async () => { await api.triggerLoreGeneration(slug); startConversionPolling(); }}>Retry wiki generation</button>
+            </div>
+            <BookEditor
+              bind:content
+              readonly={!isEditing}
+              onContentChange={(md) => { if (isEditing) debouncedSave(md); }}
+            />
+          {:else}
+            <div class="status-section">
+              <p class="status-message error">
+                {book.errorMessage || `Unknown status: ${book.status}`}
+              </p>
+              <UploadZone {slug} onUploaded={handleUploaded} />
+            </div>
+          {/if}
         {/if}
       </div>
 
@@ -554,6 +581,33 @@
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
     flex-shrink: 0;
+  }
+
+  .error-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 16px;
+    background: rgba(249, 117, 131, 0.1);
+    border-bottom: 1px solid rgba(249, 117, 131, 0.2);
+    color: #f97583;
+    font-size: 13px;
+  }
+
+  .error-banner .btn-retry {
+    margin-left: auto;
+    padding: 4px 12px;
+    background: rgba(249, 117, 131, 0.15);
+    border: 1px solid rgba(249, 117, 131, 0.3);
+    border-radius: 4px;
+    color: #f97583;
+    cursor: pointer;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .error-banner .btn-retry:hover {
+    background: rgba(249, 117, 131, 0.25);
   }
 
   .task-banner {
