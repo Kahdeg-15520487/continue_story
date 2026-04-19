@@ -195,14 +195,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       }
       let managed = mode !== "write"
         ? Array.from(sessions.values()).find(s => s.bookSlug === bookSlug)
-        : Array.from(sessions.values()).find(s => s.bookSlug === bookSlug && s.session.isStreaming);
-      if (!managed && mode === "write") {
-        managed = Array.from(sessions.values()).find(s => s.bookSlug === bookSlug);
-        if (managed) {
-          disposeSession(managed.id, "replacing stale write session");
-          managed = undefined;
-        }
-      }
+        : undefined;
       if (!managed) {
         managed = await createSession(bookSlug, mode === "write" ? "write" : "read");
       } else {
@@ -240,23 +233,12 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       const { message } = JSON.parse(body);
       console.log(`[session:${managed.id}] prompt: "${message.slice(0, 80)}..." (${message.length} chars)`);
 
-      if (managed.session.isStreaming) {
-        sendError(res, 409, "Session is busy processing another prompt");
-        return;
-      }
-
       managed.responseText = "";
       managed.responseReject = null;
 
-      const promptError = new Promise<never>((_, reject) => {
-        managed.responseReject = reject;
-      });
+      await managed.session.prompt(message);
 
-      const result = await Promise.race([
-        managed.session.prompt(message).then(() => managed.responseText),
-        promptError,
-      ]);
-
+      const result = managed.responseText;
       managed.responseReject = null;
       managed.responseText = "";
       console.log(`[session:${managed.id}] response: ${result.length} chars`);
