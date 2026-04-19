@@ -61,6 +61,7 @@ export const api = {
     onChunk: (data: string) => void,
     onDone: () => void,
     onError?: (err: string) => void,
+    onThinking?: (text: string) => void,
   ): AbortController {
     const controller = new AbortController();
     fetch(`${BASE}/chat`, {
@@ -98,6 +99,8 @@ export const api = {
                     const delta = evt.assistantMessageEvent;
                     if (delta?.type === 'text_delta') {
                       onChunk(delta.delta);
+                    } else if (delta?.type === 'thinking_delta') {
+                      onThinking?.(delta.delta);
                     }
                   } else if (evt.type === 'error') {
                     onError?.(evt.message || evt.error || 'Unknown error');

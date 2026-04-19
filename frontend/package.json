@@ -26,6 +26,7 @@
 		"@milkdown/plugin-listener": "^7.20.0",
 		"@milkdown/preset-commonmark": "^7.20.0",
 		"@milkdown/preset-gfm": "^7.20.0",
-		"@milkdown/theme-nord": "^7.20.0"
+		"@milkdown/theme-nord": "^7.20.0",
+		"marked": "^18.0.2"
 	}
 }

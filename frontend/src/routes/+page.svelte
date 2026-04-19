@@ -106,7 +106,7 @@
   <aside class="sidebar">
     <div class="sidebar-header">
       <h1>Library</h1>
-      <button class="btn btn-primary" onclick={() => showCreateForm = !showCreateForm} disabled={creating}>
+      <button class="btn btn-primary" onclick={() => { createError = ''; showCreateForm = !showCreateForm; }} disabled={creating}>
         + New Book
       </button>
     </div>
