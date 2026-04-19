@@ -193,10 +193,16 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
         sendError(res, 400, "Invalid book slug");
         return;
       }
-      // Reuse existing read session; always create fresh write session
       let managed = mode !== "write"
         ? Array.from(sessions.values()).find(s => s.bookSlug === bookSlug)
-        : undefined;
+        : Array.from(sessions.values()).find(s => s.bookSlug === bookSlug && s.session.isStreaming);
+      if (!managed && mode === "write") {
+        managed = Array.from(sessions.values()).find(s => s.bookSlug === bookSlug);
+        if (managed) {
+          disposeSession(managed.id, "replacing stale write session");
+          managed = undefined;
+        }
+      }
       if (!managed) {
         managed = await createSession(bookSlug, mode === "write" ? "write" : "read");
       } else {
