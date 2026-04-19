@@ -38,6 +38,7 @@ builder.Services.AddTransient<ConversionJobService>();
 // Agent service
 builder.Services.AddHttpClient<IAgentService, AgentService>();
 builder.Services.AddTransient<LoreJobService>();
+builder.Services.AddScoped<AgentTaskService>();
 
 builder.Services.AddCors(options =>
 {
@@ -66,11 +67,18 @@ UploadEndpoints.Map(app);
 ChatEndpoints.Map(app);
 ChatHistoryEndpoints.Map(app);
 LoreEndpoints.Map(app);
+AgentEndpoints.Map(app);
 
 if (app.Environment.IsDevelopment())
     app.UseHangfireDashboard("/hangfire", new DashboardOptions
     {
         Authorization = [] // No auth in development
     });
+
+    // Periodic session cleanup (daily at 3 AM)
+    RecurringJob.AddOrUpdate<SessionCleanupService>(
+        "session-cleanup",
+        x => x.CleanupAsync(),
+        "0 3 * * *");
 
 app.Run();

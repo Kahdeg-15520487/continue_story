@@ -75,3 +75,12 @@ export interface ConversionStatus {
     failed: number;
   };
 }
+
+export interface AgentTaskInfo {
+  id: number;
+  taskType: string;
+  description: string;
+  status: string;
+  errorMessage: string | null;
+  updatedAt: string;
+}

@@ -22,4 +22,16 @@ public interface IAgentService
     /// Kill a session by ID.
     /// </summary>
     Task KillSessionAsync(string sessionId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Get session info (message count, token usage, etc).
+    /// </summary>
+    Task<SessionInfo> GetSessionInfoAsync(string sessionId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Trigger compaction on a session.
+    /// </summary>
+    Task CompactSessionAsync(string sessionId, string? customInstructions = null, CancellationToken ct = default);
 }
+
+public record SessionInfo(string SessionId, string BookSlug, string Mode, int MessageCount, long TokenUsed, long TokenLimit);

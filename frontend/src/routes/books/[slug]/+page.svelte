@@ -107,6 +107,17 @@
   }
 
   onMount(loadBook);
+
+  // Check for interrupted tasks
+  let interruptedTasks: Array<{ id: number; taskType: string; description: string }> = $state([]);
+
+  $effect(() => {
+    if (book) {
+      api.getAgentTasks(slug).then(tasks => {
+        interruptedTasks = tasks.filter(t => t.status === 'interrupted');
+      }).catch(() => {});
+    }
+  });
 </script>
 
 {#if loading}
@@ -136,6 +147,12 @@
         </button>
       </div>
     </div>
+
+    {#if interruptedTasks.length > 0}
+      <div class="task-banner">
+        <span>⚠️ Interrupted task{interruptedTasks.length > 1 ? 's' : ''}: {interruptedTasks.map(t => t.description).join(', ')}</span>
+      </div>
+    {/if}
 
     <div class="main-area">
       <div class="editor-pane">
@@ -476,5 +493,16 @@
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
     flex-shrink: 0;
+  }
+
+  .task-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 16px;
+    background: rgba(210, 153, 34, 0.1);
+    border-bottom: 1px solid rgba(210, 153, 34, 0.2);
+    color: #d29922;
+    font-size: 12px;
   }
 </style>

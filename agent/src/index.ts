@@ -1,4 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "http";
+import { mkdirSync, readdirSync, statSync, unlinkSync, rmSync } from "fs";
+import { join } from "path";
 import {
   createAgentSession,
   createCodingTools,
@@ -14,10 +16,12 @@ const PORT = parseInt(process.env.PORT || "3001");
 const MAX_SESSIONS = parseInt(process.env.MAX_SESSIONS || "10");
 const SESSION_IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 min idle → dispose
 const SESSION_MAX_LIFETIME_MS = 30 * 60 * 1000; // 30 min hard limit
+const COMPACT_THRESHOLD_TOKENS = 100_000; // auto-compact at ~100k tokens
 
 interface ManagedSession {
   id: string;
   bookSlug: string;
+  mode: "read" | "write";
   session: AgentSession;
   unsubscribe: () => void;
   createdAt: number;
@@ -26,14 +30,22 @@ interface ManagedSession {
   maxLifetimeTimer: ReturnType<typeof setTimeout>;
   responseReject: ((err: Error) => void) | null;
   responseText: string;
+  tokenCount: number;
 }
 
 const sessions = new Map<string, ManagedSession>();
+
+function getSessionDir(bookSlug: string): string {
+  return `/library/${bookSlug}/.pi-sessions`;
+}
 
 async function createSession(bookSlug: string, mode: "read" | "write"): Promise<ManagedSession> {
   const id = `${bookSlug}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const cwd = `/library/${bookSlug}`;
   const agentDir = getAgentDir();
+  const sessionDir = getSessionDir(bookSlug);
+
+  mkdirSync(sessionDir, { recursive: true });
 
   const tools = mode === "write" ? createCodingTools(cwd) : createReadOnlyTools(cwd);
 
@@ -51,12 +63,13 @@ async function createSession(bookSlug: string, mode: "read" | "write"): Promise<
     agentDir,
     tools,
     resourceLoader: loader,
-    sessionManager: SessionManager.inMemory(),
+    sessionManager: SessionManager.create(sessionDir),
   });
 
   const managed: ManagedSession = {
     id,
     bookSlug,
+    mode,
     session,
     unsubscribe: () => {},
     createdAt: Date.now(),
@@ -65,6 +78,7 @@ async function createSession(bookSlug: string, mode: "read" | "write"): Promise<
     maxLifetimeTimer: setTimeout(() => disposeSession(id, "max lifetime"), SESSION_MAX_LIFETIME_MS),
     responseReject: null,
     responseText: "",
+    tokenCount: 0,
   };
 
   managed.unsubscribe = session.subscribe((event: AgentSessionEvent) => {
@@ -76,6 +90,62 @@ async function createSession(bookSlug: string, mode: "read" | "write"): Promise<
   return managed;
 }
 
+async function restoreSession(bookSlug: string): Promise<ManagedSession | null> {
+  const sessionDir = getSessionDir(bookSlug);
+  const cwd = `/library/${bookSlug}`;
+  const agentDir = getAgentDir();
+
+  try {
+    const tools = createReadOnlyTools(cwd);
+    const loader = new DefaultResourceLoader({
+      cwd,
+      agentDir,
+      skillsOverride: (current) => ({ skills: [], diagnostics: current.diagnostics }),
+    });
+    await loader.reload();
+
+    const { session, modelFallbackMessage } = await createAgentSession({
+      cwd,
+      agentDir,
+      tools,
+      resourceLoader: loader,
+      sessionManager: SessionManager.continueRecent(sessionDir),
+    });
+
+    if (modelFallbackMessage) {
+      console.log(`[session:restore] model fallback: ${modelFallbackMessage}`);
+    }
+
+    const id = `${bookSlug}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const managed: ManagedSession = {
+      id,
+      bookSlug,
+      mode: "read",
+      session,
+      unsubscribe: () => {},
+      createdAt: Date.now(),
+      lastActivity: Date.now(),
+      idleTimer: setTimeout(() => disposeSession(id, "idle timeout"), SESSION_IDLE_TIMEOUT_MS),
+      maxLifetimeTimer: setTimeout(() => disposeSession(id, "max lifetime"), SESSION_MAX_LIFETIME_MS),
+      responseReject: null,
+      responseText: "",
+      tokenCount: 0,
+    };
+
+    managed.unsubscribe = session.subscribe((event: AgentSessionEvent) => {
+      handleSessionEvent(managed, event);
+    });
+
+    sessions.set(id, managed);
+    const msgCount = session.agent?.state?.messages?.length ?? 0;
+    console.log(`[session:${id}] restored for "${bookSlug}" (history: ${msgCount} messages, active: ${sessions.size})`);
+    return managed;
+  } catch (err: any) {
+    console.log(`[session:restore] no session to restore for "${bookSlug}": ${err.message}`);
+    return null;
+  }
+}
+
 function handleSessionEvent(session: ManagedSession, event: AgentSessionEvent) {
   switch (event.type) {
     case "message_start":
@@ -83,8 +153,27 @@ function handleSessionEvent(session: ManagedSession, event: AgentSessionEvent) {
       break;
     case "message_end": {
       const usage = event.message?.usage;
-      const tokens = usage ? `in=${usage.input || 0} out=${usage.output || 0}` : "";
-      console.log(`[session:${session.id}] message_end: ${tokens}`);
+      if (usage) {
+        const total = (usage.input || 0) + (usage.output || 0);
+        session.tokenCount += total;
+        console.log(`[session:${session.id}] message_end: in=${usage.input || 0} out=${usage.output || 0} cumulative=${session.tokenCount}`);
+      } else {
+        console.log(`[session:${session.id}] message_end: (no usage)`);
+      }
+
+      // Auto-compact for read sessions exceeding threshold
+      if (session.mode === "read" && session.tokenCount > COMPACT_THRESHOLD_TOKENS) {
+        console.log(`[session:${session.id}] auto-compacting (tokens: ${session.tokenCount} > ${COMPACT_THRESHOLD_TOKENS})`);
+        const sessionRef = session;
+        session.session.compact(
+          "Summarize the conversation, keeping key facts about the book that were discussed. Preserve any analysis or interpretations shared."
+        ).then(() => {
+          sessionRef.tokenCount = 0;
+          console.log(`[session:${sessionRef.id}] compaction complete, token count reset`);
+        }).catch((err: any) => {
+          console.error(`[session:${sessionRef.id}] compaction failed:`, err.message);
+        });
+      }
       break;
     }
     case "agent_end": {
@@ -104,7 +193,7 @@ function handleSessionEvent(session: ManagedSession, event: AgentSessionEvent) {
       console.error(`[session:${session.id}] extension_error: ${event.error || "unknown"}`);
       if (session.responseReject) {
         session.responseReject(new Error(event.error || "Extension error"));
-    session.responseReject = null;
+        session.responseReject = null;
         session.responseText = "";
       }
       break;
@@ -131,6 +220,27 @@ function disposeSession(id: string, reason: string) {
     managed.responseReject(new Error(`Session disposed: ${reason}`));
     managed.responseReject = null;
   }
+
+  // Delete session files on explicit client request
+  if (reason === "client request") {
+    try {
+      const sessionDir = getSessionDir(managed.bookSlug);
+      // Remove all .jsonl files in this book's session dir
+      if (managed.mode === "write") {
+        // For write sessions, just dispose — the lore job may need the session
+      } else {
+        // For read sessions, clean up all session files
+        try {
+          const files = readdirSync(sessionDir).filter(f => f.endsWith(".jsonl"));
+          for (const f of files) {
+            unlinkSync(join(sessionDir, f));
+          }
+          console.log(`[session:${id}] cleaned up ${files.length} session files`);
+        } catch {}
+      }
+    } catch {}
+  }
+
   sessions.delete(id);
 }
 
@@ -159,8 +269,10 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       sessions: Array.from(sessions.values()).map(s => ({
         id: s.id,
         bookSlug: s.bookSlug,
+        mode: s.mode,
         age: Math.round((Date.now() - s.createdAt) / 1000) + "s",
         idle: Math.round((Date.now() - s.lastActivity) / 1000) + "s",
+        tokenCount: s.tokenCount,
       })),
     }));
     return;
@@ -173,8 +285,10 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       sessions: Array.from(sessions.values()).map(s => ({
         id: s.id,
         bookSlug: s.bookSlug,
+        mode: s.mode,
         age: Math.round((Date.now() - s.createdAt) / 1000) + "s",
         idle: Math.round((Date.now() - s.lastActivity) / 1000) + "s",
+        tokenCount: s.tokenCount,
       })),
     }));
     return;
@@ -193,19 +307,79 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
         sendError(res, 400, "Invalid book slug");
         return;
       }
-      let managed = mode !== "write"
-        ? Array.from(sessions.values()).find(s => s.bookSlug === bookSlug)
-        : undefined;
+
+      let managed: ManagedSession | undefined;
+
+      if (mode !== "write") {
+        // Try to reuse existing in-memory session
+        managed = Array.from(sessions.values())
+          .find(s => s.bookSlug === bookSlug && s.mode === "read");
+
+        // No in-memory session — try to restore from persistent storage
+        if (!managed) {
+          managed = (await restoreSession(bookSlug)) ?? undefined;
+        }
+      }
+
       if (!managed) {
         managed = await createSession(bookSlug, mode === "write" ? "write" : "read");
       } else {
         resetIdleTimer(managed);
       }
+
       res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders() });
-      res.end(JSON.stringify({ sessionId: managed.id, bookSlug: managed.bookSlug }));
+      res.end(JSON.stringify({
+        sessionId: managed.id,
+        bookSlug: managed.bookSlug,
+        mode: managed.mode,
+        messageCount: managed.session.agent?.state?.messages?.length ?? 0,
+      }));
     } catch (err: any) {
       console.error("[session] create failed:", err.message);
       sendError(res, 500, `Failed to create session: ${err.message}`);
+    }
+    return;
+  }
+
+  // Session info
+  const infoMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/info$/);
+  if (infoMatch && req.method === "GET") {
+    const sessionId = infoMatch[1];
+    const managed = sessions.get(sessionId);
+    if (!managed) {
+      sendError(res, 404, "Session not found");
+      return;
+    }
+    res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders() });
+    res.end(JSON.stringify({
+      sessionId: managed.id,
+      bookSlug: managed.bookSlug,
+      mode: managed.mode,
+      messageCount: managed.session.agent?.state?.messages?.length ?? 0,
+      lastActivity: new Date(managed.lastActivity).toISOString(),
+      tokenBudget: { used: managed.tokenCount, limit: COMPACT_THRESHOLD_TOKENS },
+    }));
+    return;
+  }
+
+  // Compact session
+  const compactMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/compact$/);
+  if (compactMatch && req.method === "POST") {
+    const sessionId = compactMatch[1];
+    const managed = sessions.get(sessionId);
+    if (!managed) {
+      sendError(res, 404, "Session not found");
+      return;
+    }
+    try {
+      const body = await readBody(req);
+      const { customInstructions } = JSON.parse(body || "{}");
+      await managed.session.compact(customInstructions);
+      managed.tokenCount = 0;
+      res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders() });
+      res.end(JSON.stringify({ success: true, tokenCount: 0 }));
+    } catch (err: any) {
+      sendError(res, 500, `Compaction failed: ${err.message}`);
     }
     return;
   }
@@ -341,7 +515,7 @@ function sendError(res: ServerResponse, code: number, message: string) {
 }
 
 function shutdown() {
-  console.log(`[server] shutting down, disposing ${sessions.size} sessions...`)
+  console.log(`[server] shutting down, disposing ${sessions.size} sessions...`);
   for (const [id] of sessions) {
     disposeSession(id, "server shutdown");
   }
@@ -353,5 +527,5 @@ process.on("SIGINT", shutdown);
 
 const server = createServer(handleRequest);
 server.listen(PORT, () => {
-  console.log(`[server] SDK session manager listening on port ${PORT} (max sessions: ${MAX_SESSIONS})`)
+  console.log(`[server] SDK session manager listening on port ${PORT} (max sessions: ${MAX_SESSIONS})`);
 });

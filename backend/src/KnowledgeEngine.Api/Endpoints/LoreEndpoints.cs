@@ -1,5 +1,6 @@
 using Hangfire;
 using KnowledgeEngine.Api.Services;
+using Microsoft.EntityFrameworkCore;
 
 namespace KnowledgeEngine.Api.Endpoints;
 
@@ -17,6 +18,28 @@ public static class LoreEndpoints
 
             var jobId = jobClient.Enqueue<LoreJobService>(x => x.GenerateLoreAsync(slug));
             return Results.Ok(new { jobId, status = "queued" });
+        });
+
+        // Retry lore generation (re-queues after error, only generates missing files)
+        group.MapPost("/retry", async (string slug, IBackgroundJobClient jobClient, KnowledgeEngine.Api.Data.AppDbContext db) =>
+        {
+            if (string.IsNullOrWhiteSpace(slug) || slug.Contains("..") || slug.Contains('/') || slug.Contains('\\'))
+                return Results.BadRequest(new { error = "Invalid slug" });
+
+            var book = await db.Books.FirstOrDefaultAsync(b => b.Slug == slug);
+            if (book is null)
+                return Results.NotFound(new { error = "Book not found" });
+
+            if (book.Status != "error" && book.Status != "generating-lore")
+                return Results.BadRequest(new { error = $"Book is in '{book.Status}' status, not retry-able" });
+
+            book.Status = "generating-lore";
+            book.ErrorMessage = null;
+            book.UpdatedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+
+            var jobId = jobClient.Enqueue<LoreJobService>(x => x.GenerateLoreAsync(slug));
+            return Results.Ok(new { jobId, status = "re-queued" });
         });
 
         group.MapGet("/", (string slug, IConfiguration config) =>

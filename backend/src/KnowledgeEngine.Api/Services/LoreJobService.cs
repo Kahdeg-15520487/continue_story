@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using KnowledgeEngine.Api.Data;
+using KnowledgeEngine.Api.Models;
 
 namespace KnowledgeEngine.Api.Services;
 
@@ -23,12 +25,13 @@ public class LoreJobService
     {
         using var scope = _scopeFactory.CreateScope();
         var agentService = scope.ServiceProvider.GetRequiredService<IAgentService>();
-        var db = scope.ServiceProvider.GetRequiredService<KnowledgeEngine.Api.Data.AppDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
         _logger.LogInformation("Generating lore for book: Slug={Slug}", slug);
 
         var libraryPath = _config.GetValue<string>("Library:Path") ?? "/library";
         var bookMd = Path.Combine(libraryPath, slug, "book.md");
+        var wikiDir = Path.Combine(libraryPath, slug, "wiki");
 
         var book = await db.Books.FirstOrDefaultAsync(b => b.Slug == slug);
         if (book is null)
@@ -38,15 +41,12 @@ public class LoreJobService
         }
 
         // Guard: already done (Hangfire retry after success)
-        var wikiDir = Path.Combine(libraryPath, slug, "wiki");
         if (book.Status == "lore-ready" && Directory.Exists(wikiDir)
             && Directory.GetFiles(wikiDir, "*.md").Length > 0)
         {
             _logger.LogInformation("Lore already generated for {Slug}, skipping", slug);
             return;
         }
-
-        // Stale generating-lore: allow retry (container may have restarted mid-generation)
 
         if (!File.Exists(bookMd) || new FileInfo(bookMd).Length == 0)
         {
@@ -60,13 +60,66 @@ public class LoreJobService
 
         Directory.CreateDirectory(wikiDir);
 
+        var expectedFiles = new[] { "characters.md", "locations.md", "themes.md", "summary.md" };
+
+        // Load existing checkpoints
+        var checkpoints = await db.LoreCheckpoints
+            .Where(c => c.BookId == book.Id)
+            .ToDictionaryAsync(c => c.TargetFile);
+
+        // Determine which files still need to be generated
+        var filesToGenerate = expectedFiles
+            .Where(f => !File.Exists(Path.Combine(wikiDir, f))
+                || checkpoints.GetValueOrDefault(f)?.Status != "done")
+            .ToList();
+
+        if (filesToGenerate.Count == 0)
+        {
+            book.Status = "lore-ready";
+            book.ErrorMessage = null;
+            book.UpdatedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+            _logger.LogInformation("All lore files already done for {Slug}", slug);
+            return;
+        }
+
         book.Status = "generating-lore";
         book.ErrorMessage = null;
         book.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
 
+        // Create checkpoints for files we'll generate
+        foreach (var file in filesToGenerate)
+        {
+            if (!checkpoints.ContainsKey(file))
+            {
+                db.LoreCheckpoints.Add(new LoreCheckpoint
+                {
+                    BookId = book.Id,
+                    Slug = slug,
+                    TargetFile = file,
+                    Status = "pending",
+                    UpdatedAt = DateTime.UtcNow,
+                });
+            }
+            else
+            {
+                // Reset failed/pending checkpoints for retry
+                checkpoints[file].Status = "pending";
+                checkpoints[file].UpdatedAt = DateTime.UtcNow;
+            }
+        }
+        await db.SaveChangesAsync();
+
+        // Reload checkpoints after saving new ones
+        checkpoints = await db.LoreCheckpoints
+            .Where(c => c.BookId == book.Id)
+            .ToDictionaryAsync(c => c.TargetFile);
+
+        // Build prompt listing only missing files
+        var fileList = string.Join(", ", filesToGenerate);
         var prompt = $"Read the book at book.md and extract lore using the lore-extraction skill. " +
-            $"Generate wiki files in the wiki/ directory: characters.md, locations.md, themes.md, and summary.md. " +
+            $"Generate these wiki files in the wiki/ directory: {fileList}. " +
             $"Follow the skill's output format exactly. The working directory is {Path.Combine(libraryPath, slug)}";
 
         try
@@ -74,33 +127,64 @@ public class LoreJobService
             var sessionId = await agentService.EnsureSessionAsync(slug, "write");
             await agentService.SendPromptAsync(sessionId, prompt);
 
-            // Kill the write session — it's one-shot
+            // Kill the write session
             try { await agentService.KillSessionAsync(sessionId); } catch { }
 
-            var expectedFiles = new[] { "characters.md", "locations.md", "themes.md", "summary.md" };
-            var createdFiles = expectedFiles
-                .Where(f => File.Exists(Path.Combine(wikiDir, f)))
-                .ToList();
+            // Update checkpoints based on what was actually created
+            foreach (var file in expectedFiles)
+            {
+                var exists = File.Exists(Path.Combine(wikiDir, file));
+                if (checkpoints.TryGetValue(file, out var cp))
+                {
+                    cp.Status = exists ? "done" : "failed";
+                    cp.UpdatedAt = DateTime.UtcNow;
+                }
+                else if (exists)
+                {
+                    db.LoreCheckpoints.Add(new LoreCheckpoint
+                    {
+                        BookId = book.Id,
+                        Slug = slug,
+                        TargetFile = file,
+                        Status = "done",
+                        UpdatedAt = DateTime.UtcNow,
+                    });
+                }
+            }
+            await db.SaveChangesAsync();
 
-            if (createdFiles.Count == 0)
+            var doneCount = expectedFiles.Count(f => File.Exists(Path.Combine(wikiDir, f)));
+
+            if (doneCount == 0)
             {
                 book.Status = "error";
-                book.ErrorMessage = "Lore generation completed but no wiki files were created. The agent may not have followed instructions.";
+                book.ErrorMessage = "Lore generation completed but no wiki files were created.";
                 book.UpdatedAt = DateTime.UtcNow;
                 await db.SaveChangesAsync();
                 _logger.LogError("Lore generation produced no files for {Slug}", slug);
                 return;
             }
 
-            book.Status = "lore-ready";
-            book.ErrorMessage = null;
+            book.Status = doneCount == expectedFiles.Length ? "lore-ready" : "error";
+            book.ErrorMessage = doneCount == expectedFiles.Length
+                ? null
+                : $"Only {doneCount}/{expectedFiles.Length} wiki files generated. Retry to regenerate missing files.";
             book.UpdatedAt = DateTime.UtcNow;
             await db.SaveChangesAsync();
-            _logger.LogInformation("Lore generation complete for {Slug}: {Count} wiki files ({Files})",
-                slug, createdFiles.Count, string.Join(", ", createdFiles));
+
+            _logger.LogInformation("Lore generation complete for {Slug}: {Done}/{Total} wiki files",
+                slug, doneCount, expectedFiles.Length);
         }
         catch (Exception ex)
         {
+            // Mark pending checkpoints as failed
+            foreach (var cp in checkpoints.Values.Where(c => c.Status == "pending"))
+            {
+                cp.Status = "failed";
+                cp.UpdatedAt = DateTime.UtcNow;
+            }
+            await db.SaveChangesAsync();
+
             book.Status = "error";
             book.ErrorMessage = $"Lore generation failed: {ex.Message}";
             book.UpdatedAt = DateTime.UtcNow;

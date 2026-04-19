@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using KnowledgeEngine.Api.Data;
 using KnowledgeEngine.Api.Models;
@@ -22,22 +21,7 @@ public static class ChatEndpoints
             if (string.IsNullOrWhiteSpace(req.BookSlug) || req.BookSlug.Contains("..") || req.BookSlug.Contains('/') || req.BookSlug.Contains('\\'))
                 return Results.BadRequest(new { error = "Invalid book slug" });
 
-            var book = await db.Books.FirstOrDefaultAsync(b => b.Slug == req.BookSlug);
-
-            // Load recent conversation history
-            List<ChatMessage> chatHistory = [];
-            if (book is not null)
-            {
-                chatHistory = await db.ChatMessages
-                    .Where(m => m.BookId == book.Id)
-                    .OrderByDescending(m => m.CreatedAt)
-                    .Take(20)
-                    .OrderBy(m => m.CreatedAt)
-                    .ToListAsync();
-            }
-
-            var historyText = string.Join("\n\n", chatHistory.Select(m =>
-                m.Role == "user" ? $"User: {m.Content}" : $"Assistant: {m.Content}"));
+            var book = await db.Books.FirstOrDefaultAsync(b => b.Slug == req.BookSlug, ct);
 
             var response = ctx.Response;
             response.ContentType = "text/event-stream";
@@ -48,12 +32,12 @@ public static class ChatEndpoints
             var bookMd = Path.Combine(libraryPath, req.BookSlug, "book.md");
             var wikiDir = Path.Combine(libraryPath, req.BookSlug, "wiki");
 
+            // Build context from book + wiki files
             var contextParts = new List<string>();
 
             if (File.Exists(bookMd))
             {
                 var content = await File.ReadAllTextAsync(bookMd, ct);
-                // Truncate to avoid exceeding context window
                 if (content.Length > 50_000)
                     content = content[..50_000] + "\n\n[... truncated ...]";
                 contextParts.Add($"# Book Content\n\n{content}");
@@ -72,17 +56,85 @@ public static class ChatEndpoints
             }
 
             var context = string.Join("\n\n---\n\n", contextParts);
-            var fullPrompt = $"You are answering questions about the book.\n\n" +
-                $"# Book Content\n\n{context}\n\n---\n\n" +
-                $"# Conversation History\n\n{historyText}\n\n" +
-                $"User: {req.Message}";
 
+            // Ensure session exists (will restore from persistent storage if available)
             var sessionId = await agentService.EnsureSessionAsync(req.BookSlug, "read", ct);
+
+            // For fresh sessions (no messages yet), inject book context as the first message
+            // so the agent knows what book it's working with. On restored sessions, skip this
+            // — the agent already has the context from previous conversation.
+            try
+            {
+                var info = await agentService.GetSessionInfoAsync(sessionId, ct);
+                if (info.MessageCount == 0)
+                {
+                    var contextPrompt = $"You are answering questions about the book.\n\n{context}";
+                    await agentService.SendPromptAsync(sessionId, contextPrompt, ct);
+                }
+            }
+            catch
+            {
+                // If info fails (agent restart, etc), send context anyway to be safe
+                try
+                {
+                    var contextPrompt = $"You are answering questions about the book.\n\n{context}";
+                    await agentService.SendPromptAsync(sessionId, contextPrompt, ct);
+                }
+                catch { }
+            }
+
+            // Send just the user message — history is managed by the Pi SDK session
+            var fullPrompt = $"User: {req.Message}";
+
+            // Save user message to DB for UI history display
+            if (book is not null)
+            {
+                db.ChatMessages.Add(new ChatMessage
+                {
+                    BookId = book.Id,
+                    Role = "user",
+                    Content = req.Message,
+                    CreatedAt = DateTime.UtcNow,
+                });
+                await db.SaveChangesAsync(ct);
+            }
+
+            var assistantText = "";
             await foreach (var evt in agentService.StreamPromptAsync(sessionId, fullPrompt, ct))
             {
                 await response.WriteAsync($"data: {evt}\n\n", ct);
                 await response.Body.FlushAsync(ct);
+
+                // Capture assistant text for DB storage
+                try
+                {
+                    var parsed = System.Text.Json.JsonDocument.Parse(evt);
+                    if (parsed.RootElement.TryGetProperty("type", out var type) && type.GetString() == "message_update")
+                    {
+                        if (parsed.RootElement.TryGetProperty("assistantMessageEvent", out var asm)
+                            && asm.TryGetProperty("type", out var asmType) && asmType.GetString() == "text_delta"
+                            && asm.TryGetProperty("delta", out var delta))
+                        {
+                            assistantText += delta.GetString() ?? "";
+                        }
+                    }
+                }
+                catch { }
             }
+
+            // Save assistant response to DB
+            if (book is not null && !string.IsNullOrEmpty(assistantText))
+            {
+                db.ChatMessages.Add(new ChatMessage
+                {
+                    BookId = book.Id,
+                    Role = "assistant",
+                    Content = assistantText,
+                    CreatedAt = DateTime.UtcNow,
+                });
+                await db.SaveChangesAsync(ct);
+            }
+
             return Results.Ok();
         });
     }

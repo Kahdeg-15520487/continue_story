@@ -102,4 +102,30 @@ public class AgentService : IAgentService
         }
         catch { }
     }
+
+    public async Task<SessionInfo> GetSessionInfoAsync(string sessionId, CancellationToken ct = default)
+    {
+        var response = await _http.GetAsync($"{_agentBaseUrl}/api/sessions/{sessionId}/info", ct);
+        response.EnsureSuccessStatusCode();
+
+        var json = await response.Content.ReadAsStringAsync(ct);
+        var result = JsonSerializer.Deserialize<JsonElement>(json);
+
+        return new SessionInfo(
+            result.GetProperty("sessionId").GetString() ?? sessionId,
+            result.GetProperty("bookSlug").GetString() ?? "",
+            result.GetProperty("mode").GetString() ?? "read",
+            result.GetProperty("messageCount").GetInt32(),
+            result.GetProperty("tokenBudget").GetProperty("used").GetInt64(),
+            result.GetProperty("tokenBudget").GetProperty("limit").GetInt64()
+        );
+    }
+
+    public async Task CompactSessionAsync(string sessionId, string? customInstructions = null, CancellationToken ct = default)
+    {
+        var response = await _http.PostAsync($"{_agentBaseUrl}/api/sessions/{sessionId}/compact",
+            new StringContent(JsonSerializer.Serialize(new { customInstructions }), Encoding.UTF8, "application/json"),
+            ct);
+        response.EnsureSuccessStatusCode();
+    }
 }

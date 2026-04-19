@@ -69,6 +69,17 @@ export const api = {
       method: 'DELETE',
     }),
 
+  // Agent session management
+  ensureAgentSession: (bookSlug: string, mode: string = 'read') =>
+    request<{ sessionId: string; bookSlug: string; mode: string; messageCount: number }>('/agent/session', {
+      method: 'POST',
+      body: JSON.stringify({ bookSlug, mode }),
+    }),
+
+  // Agent tasks
+  getAgentTasks: (slug: string) =>
+    request<Array<{ id: number; taskType: string; description: string; status: string; errorMessage: string | null; updatedAt: string }>>(`/agent/tasks/${slug}`),
+
   // Chat (SSE)
   chat(
     bookSlug: string,

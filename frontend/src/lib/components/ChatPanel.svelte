@@ -32,6 +32,13 @@
     } catch {
       // No history yet
     }
+
+    // Ensure agent session is alive (restores from persistent storage if needed)
+    try {
+      await api.ensureAgentSession(slug, 'read');
+    } catch {
+      // Session may have been disposed — will be recreated on next message
+    }
   });
 
   async function send() {
@@ -45,8 +52,6 @@
     currentResponse = '';
     thinkingText = '';
 
-    api.saveChatMessage(slug, 'user', msg).catch(() => {});
-
     api.chat(
       slug,
       msg,
@@ -54,7 +59,6 @@
       () => {
         if (currentResponse) {
           messages = [...messages, { role: 'assistant', text: currentResponse, thinking: thinkingText || undefined }];
-          api.saveChatMessage(slug, 'assistant', currentResponse, thinkingText || undefined).catch(() => {});
         }
         currentResponse = '';
         thinkingText = '';
