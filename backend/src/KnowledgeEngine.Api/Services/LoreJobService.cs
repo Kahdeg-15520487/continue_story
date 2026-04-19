@@ -36,6 +36,22 @@ public class LoreJobService
             return;
         }
 
+        // Guard: already done (Hangfire retry after success)
+        var wikiDir = Path.Combine(libraryPath, slug, "wiki");
+        if (book.Status == "lore-ready" && Directory.Exists(wikiDir)
+            && Directory.GetFiles(wikiDir, "*.md").Length > 0)
+        {
+            _logger.LogInformation("Lore already generated for {Slug}, skipping", slug);
+            return;
+        }
+
+        // Guard: currently generating (Hangfire retry while first attempt is still running)
+        if (book.Status == "generating-lore")
+        {
+            _logger.LogInformation("Lore already being generated for {Slug}, skipping retry", slug);
+            return;
+        }
+
         if (!File.Exists(bookMd) || new FileInfo(bookMd).Length == 0)
         {
             book.Status = "error";
@@ -46,7 +62,6 @@ public class LoreJobService
             return;
         }
 
-        var wikiDir = Path.Combine(libraryPath, slug, "wiki");
         Directory.CreateDirectory(wikiDir);
 
         book.Status = "generating-lore";
