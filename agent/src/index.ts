@@ -111,27 +111,78 @@ function handleAgentMessage(msg: any) {
     return;
   }
 
-  // All other messages are events — forward to SSE subscribers
+  // All other messages are events — log useful detail, forward to SSE subscribers
   if (msg.type === "agent_start") {
     console.log(`[event] agent started`);
+  } else if (msg.type === "turn_start") {
+    console.log(`[event] turn start`);
+  } else if (msg.type === "turn_end") {
+    console.log(`[event] turn end`);
+  } else if (msg.type === "message_start") {
+    const role = msg.message?.role || "unknown";
+    const api = msg.message?.api || "";
+    const provider = msg.message?.provider || "";
+    const model = msg.message?.model || "";
+    console.log(`[event] message_start: role=${role} provider=${provider} model=${model}`);
+  } else if (msg.type === "message_end") {
+    const role = msg.message?.role || "unknown";
+    const usage = msg.message?.usage;
+    const stopReason = msg.message?.stopReason || "";
+    const errMsg = msg.message?.errorMessage;
+    const tokens = usage ? `in=${usage.input || 0} out=${usage.output || 0} total=${usage.totalTokens || 0}` : "";
+    console.log(`[event] message_end: role=${role} stop=${stopReason} ${tokens}${errMsg ? " ERROR: " + errMsg : ""}`);
   } else if (msg.type === "message_update") {
     const delta = msg.assistantMessageEvent;
-    if (delta?.type === "text_delta") {
-      // Don't log every delta, too noisy
-    } else if (delta?.type === "thinking_delta") {
-      // Reasoning model — skip
+    if (delta?.type === "toolcall_start") {
+      const name = delta.toolCall?.name || "unknown";
+      const args = JSON.stringify(delta.toolCall?.arguments || {}).slice(0, 200);
+      console.log(`[event] toolcall_start: ${name}(${args})`);
+    } else if (delta?.type === "toolcall_delta") {
+      const name = delta.toolCall?.name || "";
+      const partialArgs = delta.toolCall?.arguments || "";
+      if (typeof partialArgs === "string" && partialArgs.length > 0) {
+        console.log(`[event] toolcall_delta: ${name} args+=${JSON.stringify(partialArgs).slice(0, 150)}`);
+      }
+    } else if (delta?.type === "toolcall_end") {
+      const name = delta.toolCall?.name || "unknown";
+      const args = JSON.stringify(delta.toolCall?.arguments || {}).slice(0, 300);
+      console.log(`[event] toolcall_end: ${name}(${args})`);
     } else if (delta?.type === "thinking_start") {
       console.log(`[event] thinking started`);
+    } else if (delta?.type === "thinking_delta") {
+      // Skip — very verbose
+    } else if (delta?.type === "thinking_end") {
+      const thinking = msg.message?.content?.find((c: any) => c.type === "thinking")?.thinking || "";
+      console.log(`[event] thinking_end: ${thinking.length} chars`);
+    } else if (delta?.type === "text_delta") {
+      // Skip — logged in agent_end summary
+    } else if (delta?.type === "text_start") {
+      console.log(`[event] text_start`);
+    } else if (delta?.type === "text_end") {
+      console.log(`[event] text_end`);
     } else {
       console.log(`[event] message_update type=${delta?.type || "unknown"}`);
     }
+  } else if (msg.type === "tool_execution_start") {
+    const name = msg.toolCall?.name || "unknown";
+    const args = JSON.stringify(msg.toolCall?.arguments || {}).slice(0, 200);
+    console.log(`[event] tool_execution_start: ${name}(${args})`);
+  } else if (msg.type === "tool_execution_update") {
+    const output = JSON.stringify(msg.output || "").slice(0, 200);
+    console.log(`[event] tool_execution_update: ${output}`);
+  } else if (msg.type === "tool_execution_end") {
+    const name = msg.toolCall?.name || "unknown";
+    const output = JSON.stringify(msg.output || "").slice(0, 300);
+    console.log(`[event] tool_execution_end: ${name} => ${output}`);
   } else if (msg.type === "agent_end") {
     const assistantMsg = msg.messages?.find((m: any) => m.role === "assistant");
     const text = assistantMsg?.content?.find((c: any) => c.type === "text")?.text || "";
     const errMsg = assistantMsg?.errorMessage;
-    console.log(`[event] agent_end: ${errMsg ? "ERROR: " + errMsg : `"${text.slice(0, 80)}${text.length > 80 ? "..." : ""}"`}`);
+    const usage = assistantMsg?.usage;
+    const tokens = usage ? `in=${usage.input || 0} out=${usage.output || 0} total=${usage.totalTokens || 0}` : "";
+    console.log(`[event] agent_end: ${errMsg ? "ERROR: " + errMsg : `"${text.slice(0, 120)}${text.length > 120 ? "..." : ""}"`} ${tokens}`);
   } else {
-    console.log(`[event] ${msg.type}`);
+    console.log(`[event] ${msg.type}: ${JSON.stringify(msg).slice(0, 200)}`);
   }
   for (const callback of eventCallbacks.values()) {
     callback(msg);
