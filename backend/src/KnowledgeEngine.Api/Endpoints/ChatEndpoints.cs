@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Http;
+using Microsoft.EntityFrameworkCore;
+using KnowledgeEngine.Api.Data;
 using KnowledgeEngine.Api.Models;
 using KnowledgeEngine.Api.Services;
 
@@ -13,11 +15,29 @@ public static class ChatEndpoints
             ChatRequest req,
             IAgentService agentService,
             IConfiguration config,
+            AppDbContext db,
             HttpContext ctx,
             CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(req.BookSlug) || req.BookSlug.Contains("..") || req.BookSlug.Contains('/') || req.BookSlug.Contains('\\'))
                 return Results.BadRequest(new { error = "Invalid book slug" });
+
+            var book = await db.Books.FirstOrDefaultAsync(b => b.Slug == req.BookSlug);
+
+            // Load recent conversation history
+            List<ChatMessage> chatHistory = [];
+            if (book is not null)
+            {
+                chatHistory = await db.ChatMessages
+                    .Where(m => m.BookId == book.Id)
+                    .OrderByDescending(m => m.CreatedAt)
+                    .Take(20)
+                    .OrderBy(m => m.CreatedAt)
+                    .ToListAsync();
+            }
+
+            var historyText = string.Join("\n\n", chatHistory.Select(m =>
+                m.Role == "user" ? $"User: {m.Content}" : $"Assistant: {m.Content}"));
 
             var response = ctx.Response;
             response.ContentType = "text/event-stream";
@@ -52,7 +72,10 @@ public static class ChatEndpoints
             }
 
             var context = string.Join("\n\n---\n\n", contextParts);
-            var fullPrompt = $"You are answering questions about the book. Here is the book's content and wiki:\n\n{context}\n\n---\n\nUser question: {req.Message}";
+            var fullPrompt = $"You are answering questions about the book.\n\n" +
+                $"# Book Content\n\n{context}\n\n---\n\n" +
+                $"# Conversation History\n\n{historyText}\n\n" +
+                $"User: {req.Message}";
 
             await foreach (var evt in agentService.StreamPromptAsync(fullPrompt, ct))
             {

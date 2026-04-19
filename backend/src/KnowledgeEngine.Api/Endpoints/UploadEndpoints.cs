@@ -58,6 +58,14 @@ public static class UploadEndpoints
             var safeFileName = Path.GetFileName(file.FileName);
             var filePath = Path.Combine(bookDir, safeFileName);
 
+            // Clean up old source file if re-uploading
+            if (!string.IsNullOrEmpty(book.SourceFile))
+            {
+                var oldPath = Path.Combine(bookDir, book.SourceFile);
+                if (File.Exists(oldPath) && oldPath != filePath)
+                    File.Delete(oldPath);
+            }
+
             using (var stream = new FileStream(filePath, FileMode.Create))
             {
                 await file.CopyToAsync(stream);

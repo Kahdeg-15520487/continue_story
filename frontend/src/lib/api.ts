@@ -55,8 +55,8 @@ export const api = {
     }),
 
   // Chat history
-  getChatHistory: (slug: string) =>
-    request<ChatHistoryMessage[]>(`/books/${slug}/chat`),
+  getChatHistory: (slug: string, limit = 100) =>
+    request<ChatHistoryMessage[]>(`/books/${slug}/chat?limit=${limit}`),
 
   saveChatMessage: (slug: string, role: string, content: string, thinking?: string) =>
     request<{ id: number }>(`/books/${slug}/chat`, {

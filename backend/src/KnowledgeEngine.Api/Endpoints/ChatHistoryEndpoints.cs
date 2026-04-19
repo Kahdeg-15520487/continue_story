@@ -11,7 +11,7 @@ public static class ChatHistoryEndpoints
         var group = app.MapGroup("/api/books/{slug}/chat");
 
         // Get chat history for a book
-        group.MapGet("/", async (string slug, AppDbContext db) =>
+        group.MapGet("/", async (string slug, int? limit, AppDbContext db) =>
         {
             if (string.IsNullOrWhiteSpace(slug) || slug.Contains("..") || slug.Contains('/') || slug.Contains('\\'))
                 return Results.BadRequest(new { error = "Invalid slug" });
@@ -22,6 +22,8 @@ public static class ChatHistoryEndpoints
 
             var messages = await db.ChatMessages
                 .Where(m => m.BookId == book.Id)
+                .OrderByDescending(m => m.CreatedAt)
+                .Take(limit ?? 100)
                 .OrderBy(m => m.CreatedAt)
                 .Select(m => new { m.Id, m.Role, m.Content, m.Thinking, m.CreatedAt })
                 .ToListAsync();

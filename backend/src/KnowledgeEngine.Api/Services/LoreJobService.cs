@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore;
+
 namespace KnowledgeEngine.Api.Services;
 
 public class LoreJobService
@@ -28,10 +30,20 @@ public class LoreJobService
         var libraryPath = _config.GetValue<string>("Library:Path") ?? "/library";
         var bookMd = Path.Combine(libraryPath, slug, "book.md");
 
-        if (!File.Exists(bookMd))
+        if (!File.Exists(bookMd) || new FileInfo(bookMd).Length == 0)
         {
-            _logger.LogError("Book content not found: {BookPath}", bookMd);
-            throw new FileNotFoundException($"Book content not found: {bookMd}");
+            _logger.LogError("Book content not found or empty: {BookPath}", bookMd);
+            // Update book status to error
+            var db = scope.ServiceProvider.GetRequiredService<KnowledgeEngine.Api.Data.AppDbContext>();
+            var book = await db.Books.FirstOrDefaultAsync(b => b.Slug == slug);
+            if (book is not null)
+            {
+                book.Status = "error";
+                book.ErrorMessage = "Cannot generate lore: book has no content";
+                book.UpdatedAt = DateTime.UtcNow;
+                await db.SaveChangesAsync();
+            }
+            return;
         }
 
         var prompt = $"Read the book at {bookMd} and extract the lore. Generate a character list in {Path.Combine(libraryPath, slug, "wiki", "characters.md")}, locations in {Path.Combine(libraryPath, slug, "wiki", "locations.md")}, themes in {Path.Combine(libraryPath, slug, "wiki", "themes.md")}, and a plot summary in {Path.Combine(libraryPath, slug, "wiki", "summary.md")}.";
