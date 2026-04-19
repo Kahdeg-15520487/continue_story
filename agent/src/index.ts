@@ -32,8 +32,6 @@ interface ManagedSession {
 
 const sessions = new Map<string, ManagedSession>();
 
-// --- Session lifecycle ---
-
 async function createSession(bookSlug: string, mode: "read" | "write"): Promise<ManagedSession> {
   const id = `${bookSlug}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const cwd = `/library/${bookSlug}`;
@@ -44,12 +42,9 @@ async function createSession(bookSlug: string, mode: "read" | "write"): Promise<
   const loader = new DefaultResourceLoader({
     cwd,
     agentDir,
-    skillsOverride: (current) => ({
-      skills: current.skills.filter(s =>
-        s.name === "lore-extraction"
-      ),
-      diagnostics: current.diagnostics,
-    }),
+    skillsOverride: mode === "write"
+      ? (current) => ({ skills: current.skills, diagnostics: current.diagnostics })
+      : (current) => ({ skills: [], diagnostics: current.diagnostics }),
   });
   await loader.reload();
 
@@ -75,7 +70,6 @@ async function createSession(bookSlug: string, mode: "read" | "write"): Promise<
     responseText: "",
   };
 
-  // Subscribe to events for logging and non-streaming response collection
   managed.unsubscribe = session.subscribe((event: AgentSessionEvent) => {
     handleSessionEvent(managed, event);
   });
@@ -100,7 +94,6 @@ function handleSessionEvent(session: ManagedSession, event: AgentSessionEvent) {
       const text = event.messages?.find((m: any) => m.role === "assistant")
         ?.content?.find((c: any) => c.type === "text")?.text || "";
       console.log(`[session:${session.id}] agent_end: "${text.slice(0, 100)}${text.length > 100 ? "..." : ""}"`);
-      // Resolve non-streaming promise
       if (session.responseResolve) {
         session.responseResolve(session.responseText);
         session.responseResolve = null;
@@ -144,7 +137,6 @@ function disposeSession(id: string, reason: string) {
   managed.session.dispose();
   clearTimeout(managed.idleTimer);
   clearTimeout(managed.maxLifetimeTimer);
-  // Reject any pending response
   if (managed.responseReject) {
     managed.responseReject(new Error(`Session disposed: ${reason}`));
     managed.responseResolve = null;
@@ -158,15 +150,6 @@ function resetIdleTimer(session: ManagedSession) {
   session.idleTimer = setTimeout(() => disposeSession(session.id, "idle timeout"), SESSION_IDLE_TIMEOUT_MS);
   session.lastActivity = Date.now();
 }
-
-function findSessionByBook(bookSlug: string): ManagedSession | undefined {
-  for (const [, s] of sessions) {
-    if (s.bookSlug === bookSlug) return s;
-  }
-  return undefined;
-}
-
-// --- HTTP server ---
 
 async function handleRequest(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url || "/", `http://localhost:${PORT}`);
@@ -222,7 +205,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
         return;
       }
       // Reuse existing session for this book
-      let managed = findSessionByBook(bookSlug);
+      let managed = Array.from(sessions.values()).find(s => s.bookSlug === bookSlug);
       if (!managed) {
         managed = await createSession(bookSlug, mode === "write" ? "write" : "read");
       } else {
@@ -370,12 +353,10 @@ function sendError(res: ServerResponse, code: number, message: string) {
   res.end(JSON.stringify({ error: message }));
 }
 
-// --- Graceful shutdown ---
-
 function shutdown() {
-  console.log(`[bridge] shutting down, disposing ${sessions.size} sessions...`);
+  console.log(`[server] shutting down, disposing ${sessions.size} sessions...`)
   for (const [id] of sessions) {
-    disposeSession(id, "bridge shutdown");
+    disposeSession(id, "server shutdown");
   }
   process.exit(0);
 }
@@ -383,9 +364,7 @@ function shutdown() {
 process.on("SIGTERM", shutdown);
 process.on("SIGINT", shutdown);
 
-// --- Start ---
-
 const server = createServer(handleRequest);
 server.listen(PORT, () => {
-  console.log(`[bridge] SDK session manager listening on port ${PORT} (max sessions: ${MAX_SESSIONS})`);
+  console.log(`[server] SDK session manager listening on port ${PORT} (max sessions: ${MAX_SESSIONS})`)
 });
