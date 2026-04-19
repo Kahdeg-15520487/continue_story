@@ -60,6 +60,7 @@ EditorEndpoints.Map(app);
 ConversionEndpoints.Map(app);
 UploadEndpoints.Map(app);
 ChatEndpoints.Map(app);
+ChatHistoryEndpoints.Map(app);
 LoreEndpoints.Map(app);
 
 if (app.Environment.IsDevelopment())
