@@ -18,6 +18,36 @@
   let showChat = $state(false);
   let showLore = $state(false);
 
+  // Resizable panel state
+  let panelWidth = $state(400); // px
+  let resizing = false;
+  let resizeX = 0;
+  let resizeStartWidth = 0;
+
+  function startResize(e: MouseEvent) {
+    resizing = true;
+    resizeX = e.clientX;
+    resizeStartWidth = panelWidth;
+    document.addEventListener('mousemove', onResize);
+    document.addEventListener('mouseup', stopResize);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }
+
+  function onResize(e: MouseEvent) {
+    if (!resizing) return;
+    const dx = resizeX - e.clientX; // dragging left = panel gets wider
+    panelWidth = Math.max(280, Math.min(800, resizeStartWidth + dx));
+  }
+
+  function stopResize() {
+    resizing = false;
+    document.removeEventListener('mousemove', onResize);
+    document.removeEventListener('mouseup', stopResize);
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  }
+
   let conversionStatus: ConversionStatus | null = $state(null);
   let conversionElapsed = $state('');
   let conversionStartTime: number | null = null;
@@ -40,7 +70,7 @@
         const updated = await api.getBook(slug);
         if (updated) {
           book = updated;
-          if (updated.status === 'ready' || updated.status === 'lore-ready') {
+          if (updated.status === 'ready' || updated.status === 'lore-ready' || updated.status === 'generating-lore') {
             clearInterval(conversionPollInterval!);
             conversionPollInterval = null;
             conversionStatus = null;
@@ -247,13 +277,15 @@
       </div>
 
       {#if showLore}
-        <div class="side-panel">
+        <div class="resize-handle" role="separator" onmousedown={startResize}></div>
+        <div class="side-panel" style="width: {panelWidth}px; min-width: {panelWidth}px;">
           <LorePanel {slug} />
         </div>
       {/if}
 
       {#if showChat}
-        <div class="side-panel">
+        <div class="resize-handle" role="separator" onmousedown={startResize}></div>
+        <div class="side-panel" style="width: {panelWidth}px; min-width: {panelWidth}px;">
           <ChatPanel {slug} />
         </div>
       {/if}
@@ -466,9 +498,33 @@
     text-decoration: underline;
   }
 
+  .resize-handle {
+    width: 6px;
+    cursor: col-resize;
+    background: transparent;
+    transition: background 0.15s;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 10;
+  }
+
+  .resize-handle::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -4px;
+    right: -4px;
+    bottom: 0;
+  }
+
+  .resize-handle:hover,
+  .resize-handle:active {
+    background: var(--accent, #58a6ff);
+  }
+
   .side-panel {
-    width: 360px;
-    min-width: 360px;
+    min-width: 280px;
+    max-width: 800px;
     border-left: 1px solid var(--border);
     background: var(--bg-secondary);
     overflow-y: auto;
