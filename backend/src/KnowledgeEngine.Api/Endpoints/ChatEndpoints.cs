@@ -10,8 +10,7 @@ public static class ChatEndpoints
     public static void Map(WebApplication app)
     {
         // SSE streaming chat endpoint
-        app.MapPost("/api/chat", async (
-            ChatRequest req,
+        app.MapPost("/api/chat", async (ChatRequest req,
             IAgentService agentService,
             IConfiguration config,
             AppDbContext db,
@@ -19,7 +18,11 @@ public static class ChatEndpoints
             CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(req.BookSlug) || req.BookSlug.Contains("..") || req.BookSlug.Contains('/') || req.BookSlug.Contains('\\'))
-                return Results.BadRequest(new { error = "Invalid book slug" });
+            {
+                ctx.Response.StatusCode = 400;
+                await ctx.Response.WriteAsJsonAsync(new { error = "Invalid book slug" }, ct);
+                return;
+            }
 
             var book = await db.Books.FirstOrDefaultAsync(b => b.Slug == req.BookSlug, ct);
 
@@ -169,8 +172,6 @@ public static class ChatEndpoints
                 });
                 await db.SaveChangesAsync(ct);
             }
-
-            return Results.Ok();
         });
     }
 }

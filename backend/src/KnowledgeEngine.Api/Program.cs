@@ -1,9 +1,12 @@
+using System.Runtime.CompilerServices;
 using Hangfire;
 using Hangfire.SQLite;
 using Microsoft.EntityFrameworkCore;
 using KnowledgeEngine.Api.Data;
 using KnowledgeEngine.Api.Endpoints;
 using KnowledgeEngine.Api.Services;
+
+[assembly: InternalsVisibleTo("KnowledgeEngine.Api.Tests")]
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -23,13 +26,18 @@ var hangfireConnectionString = builder.Configuration.GetConnectionString("Hangfi
 
 builder.Services.AddHangfire(config =>
 {
+    if (builder.Environment.IsEnvironment("Testing")) return;
     config
         .UseSimpleAssemblyNameTypeSerializer()
         .UseRecommendedSerializerSettings()
         .UseSQLiteStorage(hangfireConnectionString);
     GlobalJobFilters.Filters.Add(new AutomaticRetryAttribute { Attempts = 0 });
 });
-builder.Services.AddHangfireServer(options => options.WorkerCount = 1);
+// Only run Hangfire if not in test mode
+if (!builder.Environment.IsEnvironment("Testing"))
+{
+    builder.Services.AddHangfireServer(options => options.WorkerCount = 1);
+}
 
 // Conversion service
 builder.Services.AddSingleton<IConversionService, ConversionService>();
@@ -56,7 +64,8 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.Migrate();
+    if (db.Database.IsRelational())
+        db.Database.Migrate();
 }
 
 app.UseCors("Frontend");
@@ -73,32 +82,38 @@ LoreEndpoints.Map(app);
 AgentEndpoints.Map(app);
 ChapterEndpoints.Map(app);
 
-// Hangfire recurring jobs — must use IRecurringJobManager after app.Build()
-using (var scope = app.Services.CreateScope())
+// Hangfire recurring jobs — only in non-test environments
+if (!app.Environment.IsEnvironment("Testing"))
 {
-    var recurring = scope.ServiceProvider.GetRequiredService<IRecurringJobManager>();
-    recurring.AddOrUpdate<LoreAutoRetryService>(
-        "lore-auto-retry",
-        x => x.RecoverStuckAsync(),
-        "*/10 * * * *"); // every 10 minutes
-
-    recurring.AddOrUpdate<SessionCleanupService>(
-        "session-cleanup",
-        x => x.CleanupAsync(),
-        "0 3 * * *");
-}
-
-if (app.Environment.IsDevelopment())
-    app.UseHangfireDashboard("/hangfire", new DashboardOptions
+    using (var scope = app.Services.CreateScope())
     {
-        Authorization = [] // No auth in development
-    });
+        var recurring = scope.ServiceProvider.GetRequiredService<IRecurringJobManager>();
+        recurring.AddOrUpdate<LoreAutoRetryService>(
+            "lore-auto-retry",
+            x => x.RecoverStuckAsync(),
+            "*/10 * * * *"); // every 10 minutes
 
-// Startup: recover any books stuck mid-generation
-using (var scope = app.Services.CreateScope())
-{
-    var autoRetry = scope.ServiceProvider.GetRequiredService<LoreAutoRetryService>();
-    await autoRetry.RecoverStuckAsync();
+        recurring.AddOrUpdate<SessionCleanupService>(
+            "session-cleanup",
+            x => x.CleanupAsync(),
+            "0 3 * * *");
+    }
+
+    if (app.Environment.IsDevelopment())
+        app.UseHangfireDashboard("/hangfire", new DashboardOptions
+        {
+            Authorization = [] // No auth in development
+        });
+
+    // Startup: recover any books stuck mid-generation
+    using (var scope = app.Services.CreateScope())
+    {
+        var autoRetry = scope.ServiceProvider.GetRequiredService<LoreAutoRetryService>();
+        await autoRetry.RecoverStuckAsync();
+    }
 }
 
 app.Run();
+
+// Make Program accessible for WebApplicationFactory
+public partial class Program { }
