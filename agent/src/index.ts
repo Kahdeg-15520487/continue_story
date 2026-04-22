@@ -34,6 +34,10 @@ interface ManagedSession {
 
 const sessions = new Map<string, ManagedSession>();
 
+function shortId(id: string): string {
+  return id.split("-").slice(-2).join("-"); // last 2 segments e.g. "0400912-lffypm"
+}
+
 function getSessionDir(bookSlug: string): string {
   return `/library/${bookSlug}/.pi-sessions`;
 }
@@ -82,7 +86,7 @@ async function createSession(bookSlug: string): Promise<ManagedSession> {
   });
 
   sessions.set(id, managed);
-  console.log(`[session:${id}] created for "${bookSlug}" (cwd: ${cwd}, active: ${sessions.size})`);
+  console.log(`[session:${shortId(id)}] created for "${bookSlug}" (active: ${sessions.size})`);
   return managed;
 }
 
@@ -133,39 +137,32 @@ async function restoreSession(bookSlug: string): Promise<ManagedSession | null> 
 
     sessions.set(id, managed);
     const msgCount = session.agent?.state?.messages?.length ?? 0;
-    console.log(`[session:${id}] restored for "${bookSlug}" (history: ${msgCount} messages, active: ${sessions.size})`);
+    console.log(`[session:${shortId(id)}] restored for "${bookSlug}" (${msgCount} msgs, active: ${sessions.size})`);
     return managed;
   } catch (err: any) {
-    console.log(`[session:restore] no session to restore for "${bookSlug}": ${err.message}`);
+    console.log(`[restore] no session for "${bookSlug}": ${err.message}`);
     return null;
   }
 }
 
 function handleSessionEvent(session: ManagedSession, event: AgentSessionEvent) {
   switch (event.type) {
-    case "message_start":
-      console.log(`[session:${session.id}] message_start: model=${event.message?.model || ""}`);
-      break;
     case "message_end": {
       const usage = event.message?.usage;
       if (usage) {
         const total = (usage.input || 0) + (usage.output || 0);
         session.tokenCount += total;
-        console.log(`[session:${session.id}] message_end: in=${usage.input || 0} out=${usage.output || 0} cumulative=${session.tokenCount}`);
-      } else {
-        console.log(`[session:${session.id}] message_end: (no usage)`);
       }
-
       if (session.tokenCount > COMPACT_THRESHOLD_TOKENS) {
-        console.log(`[session:${session.id}] auto-compacting (tokens: ${session.tokenCount} > ${COMPACT_THRESHOLD_TOKENS})`);
+        console.log(`[session:${shortId(session.id)}] auto-compacting (tokens: ${session.tokenCount})`);
         const sessionRef = session;
         session.session.compact(
           "Summarize the conversation, keeping key facts about the book that were discussed. Preserve any analysis or interpretations shared."
         ).then(() => {
           sessionRef.tokenCount = 0;
-          console.log(`[session:${sessionRef.id}] compaction complete, token count reset`);
+          console.log(`[session:${shortId(sessionRef.id)}] compacted`);
         }).catch((err: any) => {
-          console.error(`[session:${sessionRef.id}] compaction failed:`, err.message);
+          console.error(`[session:${shortId(sessionRef.id)}] compact failed: ${err.message}`);
         });
       }
       break;
@@ -173,29 +170,17 @@ function handleSessionEvent(session: ManagedSession, event: AgentSessionEvent) {
     case "agent_end": {
       const text = event.messages?.find((m: any) => m.role === "assistant")
         ?.content?.find((c: any) => c.type === "text")?.text || "";
-      console.log(`[session:${session.id}] agent_end: "${text.slice(0, 100)}${text.length > 100 ? "..." : ""}"`);
-      break;
-    }
-    case "message_update": {
-      const delta = event.assistantMessageEvent;
-      if (delta.type === "text_delta") {
-        session.responseText += delta.delta;
-      }
+      const tools = event.messages?.filter((m: any) => m.role === "tool").length ?? 0;
+      console.log(`[session:${shortId(session.id)}] done: ${text.length} chars, ${tools} tool calls, ${session.tokenCount} tokens`);
       break;
     }
     case "extension_error":
-      console.error(`[session:${session.id}] extension_error: ${event.error || "unknown"}`);
+      console.error(`[session:${shortId(session.id)}] extension error: ${event.error || "unknown"}`);
       if (session.responseReject) {
         session.responseReject(new Error(event.error || "Extension error"));
         session.responseReject = null;
         session.responseText = "";
       }
-      break;
-    case "tool_execution_start":
-      console.log(`[session:${session.id}] tool: ${event.toolName}`);
-      break;
-    case "tool_execution_end":
-      console.log(`[session:${session.id}] tool end: ${event.toolName} (${event.isError ? "error" : "ok"})`);
       break;
   }
 
@@ -205,7 +190,7 @@ function handleSessionEvent(session: ManagedSession, event: AgentSessionEvent) {
 function disposeSession(id: string, reason: string) {
   const managed = sessions.get(id);
   if (!managed) return;
-  console.log(`[session:${id}] disposing: ${reason}`);
+  console.log(`[session:${shortId(id)}] disposing: ${reason}`);
   managed.unsubscribe();
   managed.session.dispose();
   clearTimeout(managed.idleTimer);
@@ -224,7 +209,7 @@ function disposeSession(id: string, reason: string) {
         for (const f of files) {
           unlinkSync(join(sessionDir, f));
         }
-        console.log(`[session:${id}] cleaned up ${files.length} session files`);
+        console.log(`[session:${shortId(id)}] cleaned ${files.length} files`);
       } catch {}
     } catch {}
   }
@@ -412,7 +397,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
     try {
       const body = await readBody(req);
       const { message } = JSON.parse(body);
-      console.log(`[session:${managed.id}] prompt: "${message.slice(0, 80)}..." (${message.length} chars)`);
+      console.log(`[session:${shortId(managed.id)}] prompt: "${message.slice(0, 80)}${message.length > 80 ? "..." : ""}" (${message.length} chars)`);
 
       managed.responseText = "";
       managed.responseReject = null;
@@ -422,7 +407,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       const result = managed.responseText;
       managed.responseReject = null;
       managed.responseText = "";
-      console.log(`[session:${managed.id}] response: ${result.length} chars`);
+      console.log(`[session:${shortId(managed.id)}] response: ${result.length} chars`);
 
       res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders() });
       res.end(JSON.stringify({ success: true, data: result }));
@@ -450,7 +435,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
     }
 
     const { message } = JSON.parse(body);
-    console.log(`[session:${managed.id}] stream prompt: "${message.slice(0, 80)}..." (${message.length} chars)`);
+    console.log(`[session:${shortId(managed.id)}] stream: "${message.slice(0, 80)}${message.length > 80 ? "..." : ""}" (${message.length} chars)`);
 
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
