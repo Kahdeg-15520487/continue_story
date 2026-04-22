@@ -272,12 +272,10 @@
       diffState = null;
     }
 
-    // If the edit is for a different chapter than what's active, switch to it
     if (chapterId !== activeChapterId) {
       await handleChapterSelect(chapterId);
     }
 
-    // Fetch scratch content and show diff
     try {
       const result = await api.getScratchContent(slug, chapterId);
       const chapter = await api.getChapter(slug, chapterId);
