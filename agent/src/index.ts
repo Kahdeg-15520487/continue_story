@@ -182,6 +182,36 @@ function handleSessionEvent(session: ManagedSession, event: AgentSessionEvent) {
         session.responseText = "";
       }
       break;
+    case "tool_execution_start": {
+      const args = event.args;
+      let argsStr: string;
+      if (typeof args === "string") {
+        argsStr = args.length > 200 ? args.slice(0, 200) + "..." : args;
+      } else {
+        argsStr = JSON.stringify(args);
+        if (argsStr.length > 200) argsStr = argsStr.slice(0, 200) + "...";
+      }
+      console.log(`[session:${shortId(session.id)}] → ${event.toolName}(${argsStr})`);
+      break;
+    }
+    case "tool_execution_end": {
+      const result = event.result;
+      let resultStr: string;
+      if (typeof result === "string") {
+        resultStr = result.length > 200 ? result.slice(0, 200) + "..." : result;
+      } else if (result !== undefined && result !== null) {
+        resultStr = JSON.stringify(result);
+        if (resultStr.length > 200) resultStr = resultStr.slice(0, 200) + "...";
+      } else {
+        resultStr = "(no output)";
+      }
+      if (event.isError) {
+        console.log(`[session:${shortId(session.id)}] ← ${event.toolName} ERROR: ${resultStr}`);
+      } else {
+        console.log(`[session:${shortId(session.id)}] ← ${event.toolName}: ${resultStr}`);
+      }
+      break;
+    }
   }
 
   resetIdleTimer(session);
