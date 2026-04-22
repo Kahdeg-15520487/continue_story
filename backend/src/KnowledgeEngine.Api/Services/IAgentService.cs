@@ -5,7 +5,9 @@ public interface IAgentService
     /// <summary>
     /// Ensure an agent session exists for the given book, returning the session ID.
     /// </summary>
-    Task<string> EnsureSessionAsync(string bookSlug, string mode = "read", CancellationToken ct = default);
+    Task<string> EnsureSessionAsync(string bookSlug, CancellationToken ct = default);
+    Task<string> CreateNewSessionAsync(string bookSlug, CancellationToken ct = default);
+    Task<List<SessionSummary>> ListSessionsAsync(string bookSlug, CancellationToken ct = default);
 
     /// <summary>
     /// Send a non-streaming prompt to a session and return the full response.
@@ -35,3 +37,4 @@ public interface IAgentService
 }
 
 public record SessionInfo(string SessionId, string BookSlug, string Mode, int MessageCount, long TokenUsed, long TokenLimit);
+public record SessionSummary(string Id, string BookSlug, string Age, string Idle, int TokenCount);

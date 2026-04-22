@@ -23,12 +23,12 @@ public class AgentService : IAgentService
         _logger.LogInformation("AgentService configured: {Url}", _agentBaseUrl);
     }
 
-    public async Task<string> EnsureSessionAsync(string bookSlug, string mode = "read", CancellationToken ct = default)
+    public async Task<string> EnsureSessionAsync(string bookSlug, CancellationToken ct = default)
     {
-        _logger.LogInformation("Ensuring session for book: {Slug} (mode: {Mode})", bookSlug, mode);
+        _logger.LogInformation("Ensuring session for book: {Slug}", bookSlug);
 
         var response = await _http.PostAsync($"{_agentBaseUrl}/api/sessions",
-            new StringContent(JsonSerializer.Serialize(new { bookSlug, mode }), Encoding.UTF8, "application/json"),
+            new StringContent(JsonSerializer.Serialize(new { bookSlug }), Encoding.UTF8, "application/json"),
             ct);
 
         response.EnsureSuccessStatusCode();
@@ -127,5 +127,58 @@ public class AgentService : IAgentService
             new StringContent(JsonSerializer.Serialize(new { customInstructions }), Encoding.UTF8, "application/json"),
             ct);
         response.EnsureSuccessStatusCode();
+    }
+
+    public async Task<string> CreateNewSessionAsync(string bookSlug, CancellationToken ct = default)
+    {
+        _logger.LogInformation("Creating new session for book: {Slug}", bookSlug);
+
+        // Kill any existing in-memory sessions for this book first
+        var existing = await ListSessionsAsync(bookSlug, ct);
+        foreach (var s in existing)
+        {
+            try { await KillSessionAsync(s.Id, ct); } catch { }
+        }
+
+        var response = await _http.PostAsync($"{_agentBaseUrl}/api/sessions",
+            new StringContent(JsonSerializer.Serialize(new { bookSlug, forceNew = true }), Encoding.UTF8, "application/json"),
+            ct);
+
+        response.EnsureSuccessStatusCode();
+
+        var json = await response.Content.ReadAsStringAsync(ct);
+        var result = JsonSerializer.Deserialize<JsonElement>(json);
+        return result.GetProperty("sessionId").GetString()
+            ?? throw new InvalidOperationException("Agent returned no sessionId");
+    }
+
+    public async Task<List<SessionSummary>> ListSessionsAsync(string bookSlug, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _http.GetAsync($"{_agentBaseUrl}/api/books/{bookSlug}/sessions", ct);
+            response.EnsureSuccessStatusCode();
+
+            var json = await response.Content.ReadAsStringAsync(ct);
+            var result = JsonSerializer.Deserialize<JsonElement>(json);
+            var sessions = result.GetProperty("sessions");
+
+            var list = new List<SessionSummary>();
+            foreach (var s in sessions.EnumerateArray())
+            {
+                list.Add(new SessionSummary(
+                    s.GetProperty("id").GetString()!,
+                    s.GetProperty("bookSlug").GetString()!,
+                    s.GetProperty("age").GetString()!,
+                    s.GetProperty("idle").GetString()!,
+                    s.GetProperty("tokenCount").GetInt32()
+                ));
+            }
+            return list;
+        }
+        catch
+        {
+            return new List<SessionSummary>();
+        }
     }
 }

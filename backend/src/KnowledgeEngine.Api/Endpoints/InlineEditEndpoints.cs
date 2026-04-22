@@ -98,7 +98,7 @@ public static class InlineEditEndpoints
             response.Headers.Append("Cache-Control", "no-cache");
             response.Headers.Append("Connection", "keep-alive");
 
-            var sessionId = await agentService.EnsureSessionAsync(slug, "write", ct);
+            var sessionId = await agentService.EnsureSessionAsync(slug, ct);
 
             try
             {

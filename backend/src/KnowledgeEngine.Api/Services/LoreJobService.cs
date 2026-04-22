@@ -135,7 +135,7 @@ public class LoreJobService
 
         try
         {
-            var sessionId = await agentService.EnsureSessionAsync(slug, "write");
+            var sessionId = await agentService.EnsureSessionAsync(slug);
             await agentService.SendPromptAsync(sessionId, prompt);
 
             // Kill the write session

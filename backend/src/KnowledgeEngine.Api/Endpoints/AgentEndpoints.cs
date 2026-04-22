@@ -19,7 +19,7 @@ public static class AgentEndpoints
 
             try
             {
-                var sessionId = await agentService.EnsureSessionAsync(req.BookSlug, req.Mode ?? "read", ct);
+                var sessionId = await agentService.EnsureSessionAsync(req.BookSlug, ct);
 
                 try
                 {
