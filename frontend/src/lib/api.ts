@@ -59,8 +59,8 @@ export const api = {
     }),
 
   // Chat history
-  getChatHistory: (slug: string, limit = 100) =>
-    request<ChatHistoryMessage[]>(`/books/${slug}/chat?limit=${limit}`),
+  getChatHistory: (slug: string, limit = 100, sessionId?: string) =>
+    request<ChatHistoryMessage[]>(`/books/${slug}/chat?limit=${limit}${sessionId ? `&sessionId=${encodeURIComponent(sessionId)}` : ''}`),
 
   saveChatMessage: (slug: string, role: string, content: string, thinking?: string) =>
     request<{ id: number }>(`/books/${slug}/chat`, {
@@ -68,8 +68,8 @@ export const api = {
       body: JSON.stringify({ role, content, thinking: thinking || null }),
     }),
 
-  clearChatHistory: (slug: string) =>
-    request<{ cleared: boolean }>(`/books/${slug}/chat`, {
+  clearChatHistory: (slug: string, sessionId?: string) =>
+    request<{ cleared: boolean }>(`/books/${slug}/chat${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''}`, {
       method: 'DELETE',
     }),
 
@@ -104,11 +104,14 @@ export const api = {
     }),
 
   // Agent session management
-  ensureAgentSession: (bookSlug: string, mode: string = 'read') =>
-    request<{ sessionId: string; bookSlug: string; mode: string; messageCount: number }>('/agent/session', {
-      method: 'POST',
-      body: JSON.stringify({ bookSlug, mode }),
-    }),
+  getChatSession: (slug: string) =>
+    request<{ sessionId: string }>(`/books/${slug}/chat/session`),
+
+  createNewChatSession: (slug: string) =>
+    request<{ sessionId: string }>(`/books/${slug}/chat/session/new`, { method: 'POST' }),
+
+  listChatSessions: (slug: string) =>
+    request<{ sessions: { id: string; bookSlug: string; age: string; idle: string; tokenCount: number }[] }>(`/books/${slug}/chat/sessions`),
 
   // Agent tasks
   getAgentTasks: (slug: string) =>
@@ -122,7 +125,7 @@ export const api = {
     onDone: () => void,
     onError?: (err: string) => void,
     onThinking?: (text: string) => void,
-    options?: { activeChapterId?: string | null; onEditDone?: (chapterId: string) => void },
+    options?: { activeChapterId?: string | null; sessionId?: string | null; onEditDone?: (chapterId: string) => void; onSessionInfo?: (sessionId: string) => void },
   ): AbortController {
     const controller = new AbortController();
     fetch(`${BASE}/chat`, {
@@ -132,6 +135,7 @@ export const api = {
         bookSlug,
         message,
         activeChapterId: options?.activeChapterId ?? null,
+        sessionId: options?.sessionId ?? null,
       }),
       signal: controller.signal,
     })
@@ -160,6 +164,10 @@ export const api = {
                   if (evt.type === 'agent_end') {
                     onDone();
                     return;
+                  } else if (evt.type === 'session_info') {
+                    if (evt.sessionId) {
+                      options?.onSessionInfo?.(evt.sessionId);
+                    }
                   } else if (evt.type === 'edit_done') {
                     if (evt.chapterId) {
                       options?.onEditDone?.(evt.chapterId);

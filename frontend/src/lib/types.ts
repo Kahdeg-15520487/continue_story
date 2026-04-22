@@ -59,7 +59,7 @@ export interface ChatHistoryMessage {
   id: number;
   role: string;
   content: string;
-  thinking: string | null;
+  sessionId: string | null;
   createdAt: string;
 }
 
