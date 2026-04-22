@@ -265,6 +265,34 @@
     diffState = null;
   }
 
+  async function handleChatEditDone(chapterId: string) {
+    // If a diff is already showing, reject it first
+    if (diffState && activeChapterId) {
+      try { await api.rejectInlineEdit(slug, activeChapterId); } catch { /* ignore */ }
+      diffState = null;
+    }
+
+    // If the edit is for a different chapter than what's active, switch to it
+    if (chapterId !== activeChapterId) {
+      await handleChapterSelect(chapterId);
+    }
+
+    // Fetch scratch content and show diff
+    try {
+      const result = await api.getScratchContent(slug, chapterId);
+      const chapter = await api.getChapter(slug, chapterId);
+      if (chapter) {
+        diffState = {
+          original: chapter.content,
+          scratch: result.content,
+        };
+        showInlineEdit = true;
+      }
+    } catch (err: any) {
+      console.error('Failed to load chat edit diff:', err);
+    }
+  }
+
   async function handleRetry() {
     const msg = book.errorMessage ?? '';
     if (msg.includes('splitting') || msg.includes('Splitting')) {
@@ -475,7 +503,7 @@
       {#if showChat}
         <div class="resize-handle" role="separator" onmousedown={startResize('chat')}></div>
         <div class="side-panel" style="width: {chatWidth}px; min-width: {chatWidth}px;">
-          <ChatPanel {slug} />
+          <ChatPanel {slug} {activeChapterId} onEditDone={handleChatEditDone} />
         </div>
       {/if}
     </div>
