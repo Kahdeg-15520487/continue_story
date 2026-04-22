@@ -15,6 +15,7 @@
 		"@sveltejs/adapter-auto": "^7.0.1",
 		"@sveltejs/kit": "^2.57.0",
 		"@sveltejs/vite-plugin-svelte": "^7.0.0",
+		"@types/diff": "^7.0.2",
 		"svelte": "^5.55.2",
 		"svelte-check": "^4.4.6",
 		"typescript": "^6.0.2",
@@ -27,6 +28,7 @@
 		"@milkdown/preset-commonmark": "^7.20.0",
 		"@milkdown/preset-gfm": "^7.20.0",
 		"@milkdown/theme-nord": "^7.20.0",
+		"diff": "^9.0.0",
 		"marked": "^18.0.2"
 	}
 }

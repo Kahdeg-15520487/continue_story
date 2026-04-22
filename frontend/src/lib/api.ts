@@ -179,6 +179,86 @@ export const api = {
     return controller;
   },
 
+  // Inline Edit (SSE)
+  inlineEdit(
+    bookSlug: string,
+    chapterId: string,
+    selectedText: string,
+    instruction: string,
+    onChunk: (delta: string) => void,
+    onDone: (scratchPath: string) => void,
+    onError?: (err: string) => void,
+    onThinking?: (text: string) => void,
+  ): AbortController {
+    const controller = new AbortController();
+    fetch(`${BASE}/books/${bookSlug}/chapters/${encodeURIComponent(chapterId)}/inline-edit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selectedText, instruction }),
+      signal: controller.signal,
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ error: res.statusText }));
+          onError?.(err.error || `HTTP ${res.status}`);
+          onDone('');
+          return;
+        }
+        const reader = res.body?.getReader();
+        if (!reader) return;
+        const decoder = new TextDecoder();
+        let sseBuffer = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          sseBuffer += decoder.decode(value, { stream: true });
+          const messages = sseBuffer.split('\n\n');
+          sseBuffer = messages.pop()!;
+          for (const msg of messages) {
+            for (const line of msg.split('\n')) {
+              if (line.startsWith('data: ')) {
+                try {
+                  const evt = JSON.parse(line.slice(6));
+                  if (evt.type === 'edit_done') {
+                    onDone(evt.scratchPath || '');
+                    return;
+                  } else if (evt.type === 'message_update') {
+                    const delta = evt.assistantMessageEvent;
+                    if (delta?.type === 'text_delta') {
+                      onChunk(delta.delta);
+                    } else if (delta?.type === 'thinking_delta') {
+                      onThinking?.(delta.delta);
+                    }
+                  } else if (evt.type === 'error') {
+                    onError?.(evt.message || evt.error || 'Unknown error');
+                  }
+                } catch {
+                  // Ignore parse errors
+                }
+              }
+            }
+          }
+        }
+        onDone('');
+      })
+      .catch((err) => {
+        if (err.name !== 'AbortError') {
+          onError?.(err.message || 'Network error');
+        }
+        onDone('');
+      });
+    return controller;
+  },
+
+  acceptInlineEdit: (slug: string, id: string) =>
+    request<{ accepted: boolean }>(`/books/${slug}/chapters/${encodeURIComponent(id)}/inline-edit/accept`, { method: 'POST' }),
+
+  rejectInlineEdit: (slug: string, id: string) =>
+    request<{ rejected: boolean }>(`/books/${slug}/chapters/${encodeURIComponent(id)}/inline-edit/reject`, { method: 'POST' }),
+
+  getScratchContent: (slug: string, id: string) =>
+    request<{ content: string }>(`/books/${slug}/chapters/${encodeURIComponent(id)}/scratch`),
+
   // Conversion status
   getConversionStatus: (slug: string) =>
     request<ConversionStatus>(`/books/${slug}/upload/status`),

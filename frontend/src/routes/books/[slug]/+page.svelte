@@ -6,6 +6,8 @@
   import ChatPanel from '$lib/components/ChatPanel.svelte';
   import LorePanel from '$lib/components/LorePanel.svelte';
   import ChapterSidebar from '$lib/components/ChapterSidebar.svelte';
+  import InlineEditMenu from '$lib/components/InlineEditMenu.svelte';
+  import DiffOverlay from '$lib/components/DiffOverlay.svelte';
   import { api } from '$lib/api';
   import type { BookDetail, ConversionStatus } from '$lib/types';
 
@@ -19,11 +21,16 @@
   let showChat = $state(false);
   let showLore = $state(false);
 
-  // Chapter state
+  let selectedText = $state('');
+  let selectionCoords = $state({ top: 0, left: 0 });
+  let showInlineEdit = $state(false);
+  let isAiEditing = $state(false);
+  let diffState = $state<{ original: string; scratch: string } | null>(null);
+
   let activeChapterId: string | null = $state(null);
   let chapterSidebar: ChapterSidebar | null = $state(null);
 
-  // Resizable panel state — each panel tracks its own width
+  // Each resizable panel tracks its own width
   let loreWidth = $state(400);
   let chatWidth = $state(400);
   let activeResize: { key: 'lore' | 'chat'; x: number; startWidth: number } | null = null;
@@ -101,7 +108,6 @@
           } else if (updated.status === 'error') {
             clearInterval(conversionPollInterval!);
             conversionPollInterval = null;
-            // Load whatever content is available
             await loadChapterContent();
           }
         }
@@ -129,7 +135,6 @@
   async function loadChapterContent() {
     if (!slug) return;
 
-    // Try chapter-based content first
     if (activeChapterId) {
       try {
         const chapter = await api.getChapter(slug, activeChapterId);
@@ -140,7 +145,6 @@
       } catch { /* chapter not found */ }
     }
 
-    // Fallback: try listing chapters and loading first one
     try {
       const chapters = await api.listChapters(slug);
       if (chapters.length > 0) {
@@ -153,7 +157,6 @@
       }
     } catch { /* no chapters yet */ }
 
-    // Final fallback: load book.md
     try {
       const result = await api.getBookContent(slug);
       content = result.content;
@@ -199,6 +202,12 @@
   }
 
   async function handleChapterSelect(id: string) {
+    // Clean up any active diff when switching chapters
+    if (diffState && activeChapterId) {
+      try { await api.rejectInlineEdit(slug, activeChapterId); } catch { /* ignore */ }
+      diffState = null;
+    }
+    showInlineEdit = false;
     activeChapterId = id;
     if (!slug) return;
     try {
@@ -207,9 +216,53 @@
     } catch { /* ignore */ }
   }
 
+  function handleTextSelect(text: string, _range: { from: number; to: number }, coords: { top: number; left: number }) {
+    selectedText = text;
+    selectionCoords = coords;
+    showInlineEdit = !!text.trim();
+  }
+
+  async function handleEditDone(scratchPath: string) {
+    isAiEditing = false;
+    showInlineEdit = false;
+    try {
+      const result = await api.getScratchContent(slug, activeChapterId!);
+      diffState = { original: content, scratch: result.content };
+    } catch (err) {
+      console.error('Failed to load scratch content:', err);
+    }
+  }
+
+  function handleEditError(message: string) {
+    isAiEditing = false;
+    // Error is shown inside InlineEditMenu component itself
+    console.error('Inline edit error:', message);
+  }
+
+  async function handleAcceptEdit() {
+    if (!activeChapterId || !diffState) return;
+    try {
+      await api.acceptInlineEdit(slug, activeChapterId);
+      diffState = null;
+      await handleChapterSelect(activeChapterId);
+      chapterSidebar?.refresh();
+    } catch (err) {
+      console.error('Accept edit failed:', err);
+    }
+  }
+
+  async function handleRejectEdit() {
+    if (!activeChapterId) return;
+    try {
+      await api.rejectInlineEdit(slug, activeChapterId);
+    } catch {
+      // Ignore — scratch might not exist
+    }
+    diffState = null;
+  }
+
   onMount(loadBook);
 
-  // Check for interrupted tasks
   let interruptedTasks: Array<{ id: number; taskType: string; description: string }> = $state([]);
 
   $effect(() => {
@@ -255,9 +308,20 @@
       </div>
     {/if}
 
+    {#if showInlineEdit && isEditing}
+      <InlineEditMenu
+        bookSlug={slug}
+        chapterId={activeChapterId ?? ''}
+        bind:visible={showInlineEdit}
+        position={selectionCoords}
+        {selectedText}
+        onEditDone={handleEditDone}
+        onEditError={handleEditError}
+      />
+    {/if}
+
     <div class="main-area">
       {#if book.status === 'ready' || book.status === 'lore-ready' || book.status === 'splitting' || book.status === 'generating-lore'}
-        <!-- Chapter sidebar -->
         <ChapterSidebar bind:this={chapterSidebar} {slug} bind:activeChapterId onChapterSelect={handleChapterSelect} />
 
         <div class="editor-pane">
@@ -273,11 +337,19 @@
             </div>
           {/if}
 
-          {#if content}
+          {#if diffState}
+            <DiffOverlay
+              originalContent={diffState.original}
+              scratchContent={diffState.scratch}
+              onAccept={handleAcceptEdit}
+              onReject={handleRejectEdit}
+            />
+          {:else if content}
             <BookEditor
               bind:content
               readonly={!isEditing}
               onContentChange={(md) => { if (isEditing) debouncedSave(md); }}
+              onTextSelect={handleTextSelect}
             />
           {:else}
             <div class="status-section">
@@ -349,11 +421,21 @@
               <button class="btn btn-retry" onclick={async () => { await api.triggerLoreGeneration(slug); startConversionPolling(); }}>Retry</button>
             </div>
             <ChapterSidebar bind:this={chapterSidebar} {slug} bind:activeChapterId onChapterSelect={handleChapterSelect} />
-            <BookEditor
-              bind:content
-              readonly={!isEditing}
-              onContentChange={(md) => { if (isEditing) debouncedSave(md); }}
-            />
+            {#if diffState}
+              <DiffOverlay
+                originalContent={diffState.original}
+                scratchContent={diffState.scratch}
+                onAccept={handleAcceptEdit}
+                onReject={handleRejectEdit}
+              />
+            {:else}
+              <BookEditor
+                bind:content
+                readonly={!isEditing}
+                onContentChange={(md) => { if (isEditing) debouncedSave(md); }}
+                onTextSelect={handleTextSelect}
+              />
+            {/if}
           {:else}
             <div class="status-section">
               <p class="status-message error">

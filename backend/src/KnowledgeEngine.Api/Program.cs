@@ -33,23 +33,21 @@ builder.Services.AddHangfire(config =>
         .UseSQLiteStorage(hangfireConnectionString);
     GlobalJobFilters.Filters.Add(new AutomaticRetryAttribute { Attempts = 0 });
 });
-// Only run Hangfire if not in test mode
 if (!builder.Environment.IsEnvironment("Testing"))
 {
     builder.Services.AddHangfireServer(options => options.WorkerCount = 1);
 }
 
-// Conversion service
 builder.Services.AddSingleton<IConversionService, ConversionService>();
 builder.Services.AddTransient<ConversionJobService>();
 
-// Agent service
 builder.Services.AddHttpClient<IAgentService, AgentService>();
 builder.Services.AddTransient<LoreJobService>();
 builder.Services.AddTransient<LoreAutoRetryService>();
 builder.Services.AddTransient<ChapterSplitService>();
 builder.Services.AddScoped<AgentTaskService>();
 builder.Services.AddScoped<ChapterService>();
+builder.Services.AddHostedService<ScratchCleanupService>();
 
 builder.Services.AddCors(options =>
 {
@@ -81,8 +79,8 @@ ChatHistoryEndpoints.Map(app);
 LoreEndpoints.Map(app);
 AgentEndpoints.Map(app);
 ChapterEndpoints.Map(app);
+InlineEditEndpoints.Map(app);
 
-// Hangfire recurring jobs — only in non-test environments
 if (!app.Environment.IsEnvironment("Testing"))
 {
     using (var scope = app.Services.CreateScope())

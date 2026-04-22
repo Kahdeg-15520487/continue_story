@@ -1,21 +1,56 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { Editor, rootCtx, defaultValueCtx, editorViewCtx } from '@milkdown/kit/core';
+  import type { EditorView } from 'prosemirror-view';
   import { commonmark } from '@milkdown/kit/preset/commonmark';
   import { gfm } from '@milkdown/kit/preset/gfm';
   import { nord } from '@milkdown/theme-nord';
   import '@milkdown/theme-nord/style.css';
   import { listener, listenerCtx } from '@milkdown/plugin-listener';
 
-  let { content = $bindable(''), readonly = $bindable(false), onContentChange }: {
+  let { content = $bindable(''), readonly = $bindable(false), onContentChange, onTextSelect }: {
     content: string;
     readonly: boolean;
     onContentChange?: (markdown: string) => void;
+    onTextSelect?: (text: string, range: { from: number; to: number }, coords: { top: number; left: number }) => void;
   } = $props();
 
   let editorEl: HTMLDivElement;
   let editor: Editor | null = $state(null);
   let lastContent = $state(content);
+
+  function setupSelectionListeners(editorView: EditorView) {
+    const handleSelectionChange = () => {
+      if (!onTextSelect) return;
+      const { state } = editorView;
+      const { from, to } = state.selection;
+      const text = state.doc.textBetween(from, to);
+      if (text.trim()) {
+        const start = editorView.coordsAtPos(from);
+        const end = editorView.coordsAtPos(to);
+        onTextSelect(text, { from, to }, {
+          top: start.top - 40,
+          left: (start.left + end.left) / 2,
+        });
+      } else {
+        onTextSelect('', { from: 0, to: 0 }, { top: 0, left: 0 });
+      }
+    };
+
+    const handleKeyup = (e: KeyboardEvent) => {
+      if (e.shiftKey) handleSelectionChange();
+    };
+
+    editorView.dom.addEventListener('mouseup', handleSelectionChange);
+    editorView.dom.addEventListener('keyup', handleKeyup);
+
+    return () => {
+      editorView.dom.removeEventListener('mouseup', handleSelectionChange);
+      editorView.dom.removeEventListener('keyup', handleKeyup);
+    };
+  }
+
+  let cleanupSelectionListeners: (() => void) | null = null;
 
   onMount(async () => {
     editor = await Editor.make()
@@ -38,6 +73,9 @@
         onContentChange?.(markdown);
       }
     });
+
+    const editorView = editor.ctx.get(editorViewCtx);
+    cleanupSelectionListeners = setupSelectionListeners(editorView);
   });
 
   // React to external content changes (e.g., parent loads new content)
@@ -46,8 +84,10 @@
     // Only replace content if it changed from outside (not from our own edit)
     if (content !== lastContent) {
       lastContent = content;
-      // Replace the entire editor content by destroying and recreating
-      // (Milkdown v7 doesn't have a clean setContent API)
+      cleanupSelectionListeners?.();
+      cleanupSelectionListeners = null;
+
+      // Milkdown v7 doesn't have a clean setContent API, so destroy & recreate
       editor.destroy();
       editor = null;
       Editor.make()
@@ -71,11 +111,13 @@
               onContentChange?.(markdown);
             }
           });
+
+          const editorView = e.ctx.get(editorViewCtx);
+          cleanupSelectionListeners = setupSelectionListeners(editorView);
         });
     }
   });
 
-  // Toggle readonly
   $effect(() => {
     if (!editor) return;
     const editorView = editor.ctx.get(editorViewCtx);
