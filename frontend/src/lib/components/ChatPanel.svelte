@@ -3,7 +3,15 @@
   import { api } from '$lib/api';
   import { marked } from 'marked';
 
-  let { slug }: { slug: string } = $props();
+  let {
+    slug,
+    activeChapterId = null,
+    onEditDone,
+  }: {
+    slug: string;
+    activeChapterId?: string | null;
+    onEditDone?: (chapterId: string) => void;
+  } = $props();
 
   let messages: Array<{ role: 'user' | 'assistant'; text: string; thinking?: string }> = $state([]);
   let input = $state('');
@@ -65,7 +73,8 @@
         streaming = false;
       },
       (err) => { chatError = err; },
-      (thinking) => { thinkingText += thinking; }
+      (thinking) => { thinkingText += thinking; },
+      { activeChapterId, onEditDone }
     );
   }
 
