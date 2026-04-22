@@ -163,7 +163,7 @@ public class ChapterSplitService
     /// </summary>
     private async Task<string[]> DetectSeparatorsAsync(IAgentService agentService, string slug, string sample)
     {
-        var sessionId = await agentService.EnsureSessionAsync(slug, "read");
+        var sessionId = await agentService.EnsureSessionAsync(slug);
 
         try
         {
@@ -197,7 +197,10 @@ public class ChapterSplitService
             {
                 var lines = cleaned.Split('\n');
                 lines = lines.SkipWhile(l => l.TrimStart().StartsWith("```")).ToArray();
-                lines = lines.TakeWhile(l => !l.TrimStart().StartsWith("```")).ToArray();
+                var remaining = lines.ToList();
+                var fenceIdx = remaining.FindIndex(l => l.TrimStart().StartsWith("```"));
+                if (fenceIdx >= 0) remaining = remaining.Take(fenceIdx).ToList();
+                lines = remaining.ToArray();
                 cleaned = string.Join('\n', lines).Trim();
             }
 

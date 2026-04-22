@@ -12,12 +12,29 @@ public class MockAgentService : IAgentService
 
     public int MessageCount { get; set; } = 0;
 
-    public Task<string> EnsureSessionAsync(string bookSlug, string mode = "read", CancellationToken ct = default)
+    public Task<string> EnsureSessionAsync(string bookSlug, CancellationToken ct = default)
     {
-        var sessionId = $"test-session-{bookSlug}-{mode}";
+        var sessionId = $"test-session-{bookSlug}";
         CreatedSessions.Add(sessionId);
-        SessionInfos[sessionId] = new SessionInfo(sessionId, bookSlug, mode, MessageCount, 0, 200000);
+        SessionInfos[sessionId] = new SessionInfo(sessionId, bookSlug, "read-write", MessageCount, 0, 200000);
         return Task.FromResult(sessionId);
+    }
+
+    public Task<string> CreateNewSessionAsync(string bookSlug, CancellationToken ct = default)
+    {
+        var sessionId = $"test-session-{bookSlug}-new-{Guid.NewGuid():N[..8]}";
+        CreatedSessions.Add(sessionId);
+        SessionInfos[sessionId] = new SessionInfo(sessionId, bookSlug, "read-write", 0, 0, 200000);
+        return Task.FromResult(sessionId);
+    }
+
+    public Task<List<SessionSummary>> ListSessionsAsync(string bookSlug, CancellationToken ct = default)
+    {
+        var sessions = SessionInfos
+            .Where(kvp => kvp.Value.BookSlug == bookSlug)
+            .Select(kvp => new SessionSummary(kvp.Key, kvp.Value.BookSlug, "0s", "0s", 0))
+            .ToList();
+        return Task.FromResult(sessions);
     }
 
     public Task<string> SendPromptAsync(string sessionId, string message, CancellationToken ct = default)
@@ -44,7 +61,7 @@ public class MockAgentService : IAgentService
     {
         if (SessionInfos.TryGetValue(sessionId, out var info))
             return Task.FromResult(info);
-        return Task.FromResult(new SessionInfo(sessionId, "unknown", "read", MessageCount, 0, 200000));
+        return Task.FromResult(new SessionInfo(sessionId, "unknown", "read-write", MessageCount, 0, 200000));
     }
 
     public Task CompactSessionAsync(string sessionId, string? customInstructions = null, CancellationToken ct = default)
