@@ -1,15 +1,27 @@
-using Microsoft.EntityFrameworkCore;
+using System.Text;
+using System.Text.Json;
 using KnowledgeEngine.Api.Data;
 using KnowledgeEngine.Api.Models;
 using KnowledgeEngine.Api.Services;
+using Microsoft.EntityFrameworkCore;
 
 namespace KnowledgeEngine.Api.Endpoints;
 
 public static class ChatEndpoints
 {
+    /// <summary>
+    /// Keywords that indicate the user wants to modify story content (not just ask questions).
+    /// </summary>
+    private static readonly string[] EditIntentKeywords = new[]
+    {
+        "rewrite", "modify", "change", "edit", "revise", "rephrase",
+        "rewrite this chapter", "change the", "make it", "update the",
+        "add a scene", "remove", "delete this", "replace", "expand",
+        "shorten", "condense", "fix this", "improve this", "reword"
+    };
+
     public static void Map(WebApplication app)
     {
-        // SSE streaming chat endpoint
         app.MapPost("/api/chat", async (ChatRequest req,
             IAgentService agentService,
             IConfiguration config,
@@ -32,99 +44,155 @@ public static class ChatEndpoints
             response.Headers.Append("Connection", "keep-alive");
 
             var libraryPath = config.GetValue<string>("Library:Path") ?? "/library";
-            var bookMd = Path.Combine(libraryPath, req.BookSlug, "book.md");
             var wikiDir = Path.Combine(libraryPath, req.BookSlug, "wiki");
             var chaptersDir = Path.Combine(libraryPath, req.BookSlug, "chapters");
 
-            // Build context from chapters + wiki files
+            // ── Build context ──────────────────────────────────────────────
             var contextParts = new List<string>();
+            var chapterFiles = Array.Empty<string>();
+            string? activeChapterTitle = null;
+            string? activeChapterContent = null;
 
-            // Chapter list for navigation context
             if (Directory.Exists(chaptersDir))
             {
-                var chapterFiles = Directory.GetFiles(chaptersDir, "ch-*.md").OrderBy(f => f).ToList();
-                if (chapterFiles.Count > 0)
+                chapterFiles = Directory.GetFiles(chaptersDir, "ch-*.md")
+                    .Where(f => !f.EndsWith(".scratch.md"))
+                    .OrderBy(f => f)
+                    .ToArray();
+
+                if (chapterFiles.Length > 0)
                 {
-                    var chapterList = new System.Text.StringBuilder("# Chapters\n\n");
-                    for (int i = 0; i < chapterFiles.Count; i++)
+                    // Chapter TOC
+                    var chapterList = new StringBuilder("# Chapters\n\n");
+                    for (int i = 0; i < chapterFiles.Length; i++)
                     {
                         var chContent = await File.ReadAllTextAsync(chapterFiles[i], ct);
                         var title = chContent.Split('\n').FirstOrDefault(l => l.StartsWith("# "))?.Substring(2) ?? $"Chapter {i + 1}";
                         chapterList.AppendLine($"{i + 1}. {title} ({Path.GetFileName(chapterFiles[i])})");
                     }
                     contextParts.Add(chapterList.ToString());
+                }
+            }
 
-                    // If user mentions a specific chapter, include its content
-                    if (!string.IsNullOrEmpty(req.Message))
+            // Active chapter content (always include if available)
+            if (!string.IsNullOrEmpty(req.ActiveChapterId) && Directory.Exists(chaptersDir))
+            {
+                var activeFile = Path.Combine(chaptersDir, $"{req.ActiveChapterId}.md");
+                if (File.Exists(activeFile))
+                {
+                    activeChapterContent = await File.ReadAllTextAsync(activeFile, ct);
+                    activeChapterTitle = activeChapterContent.Split('\n').FirstOrDefault(l => l.StartsWith("# "))?.Substring(2) ?? req.ActiveChapterId;
+                    var truncated = activeChapterContent.Length > 30_000
+                        ? activeChapterContent[..30_000] + "\n\n[... truncated ...]"
+                        : activeChapterContent;
+                    contextParts.Add($"# Current Chapter: {activeChapterTitle}\n\n{truncated}");
+                }
+            }
+
+            // If user mentions another chapter by name/number, include it too
+            if (!string.IsNullOrEmpty(req.Message) && chapterFiles.Length > 0)
+            {
+                var msgLower = req.Message.ToLowerInvariant();
+                foreach (var chFile in chapterFiles)
+                {
+                    var chContent = await File.ReadAllTextAsync(chFile, ct);
+                    var title = chContent.Split('\n').FirstOrDefault(l => l.StartsWith("# "))?.Substring(2) ?? "";
+                    var fileName = Path.GetFileNameWithoutExtension(chFile);
+
+                    // Skip the active chapter (already included)
+                    if (fileName == req.ActiveChapterId) continue;
+
+                    var match = false;
+                    if (!string.IsNullOrEmpty(title) && msgLower.Contains(title.ToLowerInvariant()))
+                        match = true;
+                    // Match "chapter N"
+                    if (int.TryParse(msgLower.Replace("chapter", "").Trim(), out var chNum))
                     {
-                        var msgLower = req.Message.ToLowerInvariant();
-                        for (int i = 0; i < chapterFiles.Count; i++)
-                        {
-                            var chContent = await File.ReadAllTextAsync(chapterFiles[i], ct);
-                            var title = chContent.Split('\n').FirstOrDefault(l => l.StartsWith("# "))?.Substring(2) ?? $"Chapter {i + 1}";
-                            if (msgLower.Contains($"chapter {i + 1}") || msgLower.Contains(title.ToLowerInvariant()))
-                            {
-                                var truncated = chContent.Length > 15_000 ? chContent[..15_000] + "\n[... truncated ...]" : chContent;
-                                contextParts.Add($"# Active Chapter: {title}\n\n{truncated}");
-                                break;
-                            }
-                        }
+                        var idx = Array.IndexOf(chapterFiles, chFile);
+                        if (idx == chNum - 1) match = true;
+                    }
+
+                    if (match)
+                    {
+                        var truncated = chContent.Length > 15_000
+                            ? chContent[..15_000] + "\n[... truncated ...]"
+                            : chContent;
+                        contextParts.Add($"# Referenced Chapter: {title}\n\n{truncated}");
                     }
                 }
             }
-            else if (File.Exists(bookMd))
-            {
-                // No chapters — use full book.md
-                var content = await File.ReadAllTextAsync(bookMd, ct);
-                if (content.Length > 50_000)
-                    content = content[..50_000] + "\n\n[... truncated ...]";
-                contextParts.Add($"# Book Content\n\n{content}");
-            }
 
-            var wikiFiles = Directory.Exists(wikiDir)
-                ? Directory.GetFiles(wikiDir, "*.md")
-                : Array.Empty<string>();
-
-            foreach (var wikiFile in wikiFiles)
+            // Wiki files (always include — they're small)
+            if (Directory.Exists(wikiDir))
             {
-                var wikiContent = await File.ReadAllTextAsync(wikiFile, ct);
-                if (wikiContent.Length > 10_000)
-                    wikiContent = wikiContent[..10_000] + "\n\n[... truncated ...]";
-                contextParts.Add($"# {Path.GetFileName(wikiFile)}\n\n{wikiContent}");
+                foreach (var wikiFile in Directory.GetFiles(wikiDir, "*.md").OrderBy(f => f))
+                {
+                    var wikiContent = await File.ReadAllTextAsync(wikiFile, ct);
+                    if (wikiContent.Length > 10_000)
+                        wikiContent = wikiContent[..10_000] + "\n\n[... truncated ...]";
+                    contextParts.Add($"# Wiki: {Path.GetFileName(wikiFile)}\n\n{wikiContent}");
+                }
             }
 
             var context = string.Join("\n\n---\n\n", contextParts);
 
-            // Ensure session exists (will restore from persistent storage if available)
-            var sessionId = await agentService.EnsureSessionAsync(req.BookSlug, "read", ct);
+            // ── Detect edit intent ─────────────────────────────────────────
+            var hasEditIntent = DetectEditIntent(req.Message ?? "");
 
-            // For fresh sessions (no messages yet), inject book context as the first message
-            // so the agent knows what book it's working with. On restored sessions, skip this
-            // — the agent already has the context from previous conversation.
+            // ── Agent session ──────────────────────────────────────────────
+            var mode = hasEditIntent ? "write" : "read";
+            var sessionId = await agentService.EnsureSessionAsync(req.BookSlug, mode, ct);
+
+            // Inject context on fresh sessions
             try
             {
                 var info = await agentService.GetSessionInfoAsync(sessionId, ct);
                 if (info.MessageCount == 0)
                 {
-                    var contextPrompt = $"You are answering questions about the book.\n\n{context}";
+                    var contextPrompt = hasEditIntent
+                        ? $"You are helping edit a book. You have access to the full book context.\n\n{context}\n\nWhen the user asks you to modify or rewrite content, write the COMPLETE modified chapter to the scratch file path they specify. Keep everything else the same unless instructed otherwise."
+                        : $"You are answering questions about the book. You have access to the full book context.\n\n{context}";
                     await agentService.SendPromptAsync(sessionId, contextPrompt, ct);
                 }
             }
             catch
             {
-                // If info fails (agent restart, etc), send context anyway to be safe
+                // Session info failed — inject context anyway
                 try
                 {
-                    var contextPrompt = $"You are answering questions about the book.\n\n{context}";
+                    var contextPrompt = $"You are helping with a book.\n\n{context}";
                     await agentService.SendPromptAsync(sessionId, contextPrompt, ct);
                 }
                 catch { }
             }
 
-            // Send just the user message — history is managed by the Pi SDK session
-            var fullPrompt = $"User: {req.Message}";
+            // ── Build user prompt ──────────────────────────────────────────
+            string userPrompt;
+            string? scratchChapterId = null;
 
-            // Save user message to DB for UI history display
+            if (hasEditIntent && !string.IsNullOrEmpty(req.ActiveChapterId))
+            {
+                // Instruct agent to write scratch file
+                scratchChapterId = req.ActiveChapterId;
+                var scratchPath = $"chapters/{req.ActiveChapterId}.scratch.md";
+                var sb = new StringBuilder();
+                sb.AppendLine($"User request: {req.Message}");
+                sb.AppendLine();
+                sb.AppendLine($"IMPORTANT: Write the COMPLETE modified chapter to: {scratchPath}");
+                sb.AppendLine("Include the full chapter content with the requested changes applied. Do not skip or summarize any parts.");
+                userPrompt = sb.ToString();
+            }
+            else if (hasEditIntent && string.IsNullOrEmpty(req.ActiveChapterId))
+            {
+                // Edit intent but no chapter selected — just answer, no file write
+                userPrompt = $"User: {req.Message}\n\nNote: No chapter is currently active. Tell the user to select a chapter first if they want to edit.";
+            }
+            else
+            {
+                userPrompt = $"User: {req.Message}";
+            }
+
+            // ── Save user message ──────────────────────────────────────────
             if (book is not null)
             {
                 db.ChatMessages.Add(new ChatMessage
@@ -137,8 +205,9 @@ public static class ChatEndpoints
                 await db.SaveChangesAsync(ct);
             }
 
+            // ── Stream response ────────────────────────────────────────────
             var assistantText = "";
-            await foreach (var evt in agentService.StreamPromptAsync(sessionId, fullPrompt, ct))
+            await foreach (var evt in agentService.StreamPromptAsync(sessionId, userPrompt, ct))
             {
                 await response.WriteAsync($"data: {evt}\n\n", ct);
                 await response.Body.FlushAsync(ct);
@@ -146,7 +215,7 @@ public static class ChatEndpoints
                 // Capture assistant text for DB storage
                 try
                 {
-                    var parsed = System.Text.Json.JsonDocument.Parse(evt);
+                    var parsed = JsonDocument.Parse(evt);
                     if (parsed.RootElement.TryGetProperty("type", out var type) && type.GetString() == "message_update")
                     {
                         if (parsed.RootElement.TryGetProperty("assistantMessageEvent", out var asm)
@@ -160,7 +229,27 @@ public static class ChatEndpoints
                 catch { }
             }
 
-            // Save assistant response to DB
+            // ── Edit done event ────────────────────────────────────────────
+            if (hasEditIntent && scratchChapterId != null)
+            {
+                var scratchFile = Path.Combine(libraryPath, req.BookSlug, "chapters", $"{scratchChapterId}.scratch.md");
+                var scratchExists = File.Exists(scratchFile);
+
+                if (scratchExists)
+                {
+                    var doneEvent = JsonSerializer.Serialize(new
+                    {
+                        type = "edit_done",
+                        chapterId = scratchChapterId,
+                        scratchPath = $"chapters/{scratchChapterId}.scratch.md",
+                        source = "chat"
+                    });
+                    await response.WriteAsync($"data: {doneEvent}\n\n", ct);
+                    await response.Body.FlushAsync(ct);
+                }
+            }
+
+            // ── Save assistant response ────────────────────────────────────
             if (book is not null && !string.IsNullOrEmpty(assistantText))
             {
                 db.ChatMessages.Add(new ChatMessage
@@ -172,6 +261,22 @@ public static class ChatEndpoints
                 });
                 await db.SaveChangesAsync(ct);
             }
+
+            // Kill write sessions (read sessions persist for conversation continuity)
+            if (hasEditIntent)
+            {
+                try { await agentService.KillSessionAsync(sessionId, ct); } catch { }
+            }
         });
+    }
+
+    /// <summary>
+    /// Simple keyword-based edit intent detection.
+    /// </summary>
+    private static bool DetectEditIntent(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message)) return false;
+        var lower = message.ToLowerInvariant();
+        return EditIntentKeywords.Any(kw => lower.Contains(kw));
     }
 }
