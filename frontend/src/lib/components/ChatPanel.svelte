@@ -20,6 +20,7 @@
   let thinkingText = $state('');
   let chatError = $state('');
   let chatContainer: HTMLDivElement;
+  let currentSessionId = $state<string | null>(null);
 
   $effect(() => {
     const _msgs = messages;
@@ -31,21 +32,20 @@
 
   onMount(async () => {
     try {
-      const history = await api.getChatHistory(slug);
+      const sessionResult = await api.getChatSession(slug);
+      currentSessionId = sessionResult.sessionId;
+    } catch {
+      // Session will be created on first message
+    }
+
+    try {
+      const history = await api.getChatHistory(slug, 100, currentSessionId ?? undefined);
       messages = history.map(m => ({
         role: m.role as 'user' | 'assistant',
         text: m.content,
-        thinking: m.thinking || undefined,
       }));
     } catch {
       // No history yet
-    }
-
-    // Ensure agent session is alive (restores from persistent storage if needed)
-    try {
-      await api.ensureAgentSession(slug, 'read');
-    } catch {
-      // Session may have been disposed — will be recreated on next message
     }
   });
 
@@ -74,7 +74,7 @@
       },
       (err) => { chatError = err; },
       (thinking) => { thinkingText += thinking; },
-      { activeChapterId, onEditDone }
+      { activeChapterId, sessionId: currentSessionId, onEditDone, onSessionInfo: (id) => { currentSessionId = id; } }
     );
   }
 
@@ -82,10 +82,21 @@
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
   }
 
+  async function startNewSession() {
+    try {
+      const result = await api.createNewChatSession(slug);
+      currentSessionId = result.sessionId;
+      messages = [];
+      chatError = '';
+    } catch (err: any) {
+      chatError = err.message || 'Failed to create new session';
+    }
+  }
+
   async function clearHistory() {
     if (!confirm('Clear all chat history?')) return;
     try {
-      await api.clearChatHistory(slug);
+      await api.clearChatHistory(slug, currentSessionId ?? undefined);
       messages = [];
       chatError = '';
     } catch (err: any) { chatError = err.message; }
@@ -99,9 +110,12 @@
 <div class="chat-panel">
   <div class="panel-header">
     <h3 class="panel-title">AI Chat</h3>
-    {#if messages.length > 0}
-      <button class="btn-clear-history" onclick={clearHistory} title="Clear chat history">Clear</button>
-    {/if}
+    <div class="session-controls">
+      <button class="btn-new-session" title="New session" onclick={startNewSession}>+</button>
+      {#if messages.length > 0}
+        <button class="btn-clear-history" onclick={clearHistory} title="Clear chat history">Clear</button>
+      {/if}
+    </div>
   </div>
 
   <div class="messages" bind:this={chatContainer}>
@@ -169,6 +183,9 @@
   .chat-panel { display: flex; flex-direction: column; height: 100%; }
   .panel-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border); }
   .panel-title { font-size: 14px; font-weight: 600; }
+  .session-controls { display: flex; gap: 6px; align-items: center; }
+  .btn-new-session { width: 26px; height: 26px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-tertiary); color: var(--text-secondary); font-size: 16px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.15s; line-height: 1; }
+  .btn-new-session:hover { background: var(--bg-hover); color: var(--text-primary); }
   .btn-clear-history { background: none; border: 1px solid var(--border); color: var(--text-secondary); font-size: 11px; padding: 2px 8px; border-radius: 4px; cursor: pointer; }
   .btn-clear-history:hover { color: #f97583; border-color: #f97583; }
   .messages { flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 12px; }
