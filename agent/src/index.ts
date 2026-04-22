@@ -4,7 +4,6 @@ import { join } from "path";
 import {
   createAgentSession,
   createCodingTools,
-  createReadOnlyTools,
   DefaultResourceLoader,
   getAgentDir,
   SessionManager,
@@ -21,7 +20,7 @@ const COMPACT_THRESHOLD_TOKENS = 100_000; // auto-compact at ~100k tokens
 interface ManagedSession {
   id: string;
   bookSlug: string;
-  mode: "read" | "write";
+  mode: string;
   session: AgentSession;
   unsubscribe: () => void;
   createdAt: number;
@@ -39,7 +38,7 @@ function getSessionDir(bookSlug: string): string {
   return `/library/${bookSlug}/.pi-sessions`;
 }
 
-async function createSession(bookSlug: string, mode: "read" | "write"): Promise<ManagedSession> {
+async function createSession(bookSlug: string): Promise<ManagedSession> {
   const id = `${bookSlug}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const cwd = `/library/${bookSlug}`;
   const agentDir = getAgentDir();
@@ -47,14 +46,11 @@ async function createSession(bookSlug: string, mode: "read" | "write"): Promise<
 
   mkdirSync(sessionDir, { recursive: true });
 
-  const tools = mode === "write" ? createCodingTools(cwd) : createReadOnlyTools(cwd);
+  const tools = createCodingTools(cwd);
 
   const loader = new DefaultResourceLoader({
     cwd,
     agentDir,
-    skillsOverride: mode === "write"
-      ? (current) => ({ skills: current.skills, diagnostics: current.diagnostics })
-      : (current) => ({ skills: [], diagnostics: current.diagnostics }),
   });
   await loader.reload();
 
@@ -69,7 +65,7 @@ async function createSession(bookSlug: string, mode: "read" | "write"): Promise<
   const managed: ManagedSession = {
     id,
     bookSlug,
-    mode,
+    mode: "read-write",
     session,
     unsubscribe: () => {},
     createdAt: Date.now(),
@@ -86,7 +82,7 @@ async function createSession(bookSlug: string, mode: "read" | "write"): Promise<
   });
 
   sessions.set(id, managed);
-  console.log(`[session:${id}] created for "${bookSlug}" (mode: ${mode}, cwd: ${cwd}, active: ${sessions.size})`);
+  console.log(`[session:${id}] created for "${bookSlug}" (cwd: ${cwd}, active: ${sessions.size})`);
   return managed;
 }
 
@@ -96,11 +92,10 @@ async function restoreSession(bookSlug: string): Promise<ManagedSession | null> 
   const agentDir = getAgentDir();
 
   try {
-    const tools = createReadOnlyTools(cwd);
+    const tools = createCodingTools(cwd);
     const loader = new DefaultResourceLoader({
       cwd,
       agentDir,
-      skillsOverride: (current) => ({ skills: [], diagnostics: current.diagnostics }),
     });
     await loader.reload();
 
@@ -120,7 +115,7 @@ async function restoreSession(bookSlug: string): Promise<ManagedSession | null> 
     const managed: ManagedSession = {
       id,
       bookSlug,
-      mode: "read",
+      mode: "read-write",
       session,
       unsubscribe: () => {},
       createdAt: Date.now(),
@@ -161,8 +156,7 @@ function handleSessionEvent(session: ManagedSession, event: AgentSessionEvent) {
         console.log(`[session:${session.id}] message_end: (no usage)`);
       }
 
-      // Auto-compact for read sessions exceeding threshold
-      if (session.mode === "read" && session.tokenCount > COMPACT_THRESHOLD_TOKENS) {
+      if (session.tokenCount > COMPACT_THRESHOLD_TOKENS) {
         console.log(`[session:${session.id}] auto-compacting (tokens: ${session.tokenCount} > ${COMPACT_THRESHOLD_TOKENS})`);
         const sessionRef = session;
         session.session.compact(
@@ -225,19 +219,13 @@ function disposeSession(id: string, reason: string) {
   if (reason === "client request") {
     try {
       const sessionDir = getSessionDir(managed.bookSlug);
-      // Remove all .jsonl files in this book's session dir
-      if (managed.mode === "write") {
-        // For write sessions, just dispose — the lore job may need the session
-      } else {
-        // For read sessions, clean up all session files
-        try {
-          const files = readdirSync(sessionDir).filter(f => f.endsWith(".jsonl"));
-          for (const f of files) {
-            unlinkSync(join(sessionDir, f));
-          }
-          console.log(`[session:${id}] cleaned up ${files.length} session files`);
-        } catch {}
-      }
+      try {
+        const files = readdirSync(sessionDir).filter(f => f.endsWith(".jsonl"));
+        for (const f of files) {
+          unlinkSync(join(sessionDir, f));
+        }
+        console.log(`[session:${id}] cleaned up ${files.length} session files`);
+      } catch {}
     } catch {}
   }
 
@@ -294,6 +282,24 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
     return;
   }
 
+  // List sessions for a book
+  const bookSessionsMatch = url.pathname.match(/^\/api\/books\/([^/]+)\/sessions$/);
+  if (bookSessionsMatch && req.method === "GET") {
+    const bookSlug = bookSessionsMatch[1];
+    const bookSessions = Array.from(sessions.values())
+      .filter(s => s.bookSlug === bookSlug)
+      .map(s => ({
+        id: s.id,
+        bookSlug: s.bookSlug,
+        age: Math.round((Date.now() - s.createdAt) / 1000) + "s",
+        idle: Math.round((Date.now() - s.lastActivity) / 1000) + "s",
+        tokenCount: s.tokenCount,
+      }));
+    res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders() });
+    res.end(JSON.stringify({ sessions: bookSessions }));
+    return;
+  }
+
   // Create/get session for a book
   if (url.pathname === "/api/sessions" && req.method === "POST") {
     if (sessions.size >= MAX_SESSIONS) {
@@ -302,7 +308,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
     }
     try {
       const body = await readBody(req);
-      const { bookSlug, mode } = JSON.parse(body);
+      const { bookSlug, forceNew } = JSON.parse(body);
       if (!bookSlug || bookSlug.includes("..") || bookSlug.includes("/") || bookSlug.includes("\\")) {
         sendError(res, 400, "Invalid book slug");
         return;
@@ -310,10 +316,11 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
 
       let managed: ManagedSession | undefined;
 
-      if (mode !== "write") {
-        // Try to reuse existing in-memory session
+      // If forceNew, skip reuse and create fresh
+      if (!forceNew) {
+        // Try to reuse existing in-memory session for this book
         managed = Array.from(sessions.values())
-          .find(s => s.bookSlug === bookSlug && s.mode === "read");
+          .find(s => s.bookSlug === bookSlug);
 
         // No in-memory session — try to restore from persistent storage
         if (!managed) {
@@ -322,7 +329,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       }
 
       if (!managed) {
-        managed = await createSession(bookSlug, mode === "write" ? "write" : "read");
+        managed = await createSession(bookSlug);
       } else {
         resetIdleTimer(managed);
       }
