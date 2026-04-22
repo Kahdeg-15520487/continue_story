@@ -10,6 +10,7 @@ public class ChatMessage
     public string Role { get; set; } = ""; // "user" or "assistant"
     public string Content { get; set; } = "";
     public string? Thinking { get; set; }
+    public string? SessionId { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public Book Book { get; set; } = null!;
