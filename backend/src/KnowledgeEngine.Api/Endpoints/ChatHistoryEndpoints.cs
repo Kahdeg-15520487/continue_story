@@ -11,7 +11,7 @@ public static class ChatHistoryEndpoints
         var group = app.MapGroup("/api/books/{slug}/chat");
 
         // Get chat history for a book
-        group.MapGet("/", async (string slug, int? limit, AppDbContext db) =>
+        group.MapGet("/", async (string slug, int? limit, HttpContext context, AppDbContext db) =>
         {
             if (string.IsNullOrWhiteSpace(slug) || slug.Contains("..") || slug.Contains('/') || slug.Contains('\\'))
                 return Results.BadRequest(new { error = "Invalid slug" });
@@ -20,12 +20,21 @@ public static class ChatHistoryEndpoints
             if (book is null)
                 return Results.NotFound(new { error = "Book not found" });
 
-            var messages = await db.ChatMessages
-                .Where(m => m.BookId == book.Id)
+            var query = db.ChatMessages
+                .Where(m => m.BookId == book.Id);
+
+            // Filter by sessionId if provided
+            var sessionId = context.Request.Query.ContainsKey("sessionId")
+                ? context.Request.Query["sessionId"].ToString()
+                : null;
+            if (!string.IsNullOrEmpty(sessionId))
+                query = query.Where(m => m.SessionId == sessionId);
+
+            var messages = await query
                 .OrderByDescending(m => m.CreatedAt)
                 .Take(limit ?? 100)
                 .OrderBy(m => m.CreatedAt)
-                .Select(m => new { m.Id, m.Role, m.Content, m.Thinking, m.CreatedAt })
+                .Select(m => new { m.Id, m.Role, m.Content, m.SessionId, m.CreatedAt })
                 .ToListAsync();
 
             return Results.Ok(messages);
@@ -57,7 +66,7 @@ public static class ChatHistoryEndpoints
         });
 
         // Clear chat history for a book
-        group.MapDelete("/", async (string slug, AppDbContext db) =>
+        group.MapDelete("/", async (string slug, HttpContext context, AppDbContext db) =>
         {
             if (string.IsNullOrWhiteSpace(slug) || slug.Contains("..") || slug.Contains('/') || slug.Contains('\\'))
                 return Results.BadRequest(new { error = "Invalid slug" });
@@ -66,7 +75,15 @@ public static class ChatHistoryEndpoints
             if (book is null)
                 return Results.NotFound(new { error = "Book not found" });
 
-            db.ChatMessages.RemoveRange(db.ChatMessages.Where(m => m.BookId == book.Id));
+            var query = db.ChatMessages.Where(m => m.BookId == book.Id);
+
+            var sessionId = context.Request.Query.ContainsKey("sessionId")
+                ? context.Request.Query["sessionId"].ToString()
+                : null;
+            if (!string.IsNullOrEmpty(sessionId))
+                query = query.Where(m => m.SessionId == sessionId);
+
+            db.ChatMessages.RemoveRange(await query.ToListAsync());
             await db.SaveChangesAsync();
 
             return Results.Ok(new { cleared = true });
