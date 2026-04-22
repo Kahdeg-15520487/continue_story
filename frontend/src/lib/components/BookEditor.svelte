@@ -8,7 +8,7 @@
   import '@milkdown/theme-nord/style.css';
   import { listener, listenerCtx } from '@milkdown/plugin-listener';
 
-  let { content = $bindable(''), readonly = $bindable(false), onContentChange, onTextSelect }: {
+  let { content = '', readonly = $bindable(false), onContentChange, onTextSelect }: {
     content: string;
     readonly: boolean;
     onContentChange?: (markdown: string) => void;
@@ -17,7 +17,7 @@
 
   let editorEl: HTMLDivElement;
   let editor: Editor | null = $state(null);
-  let lastContent = $state(content);
+  
 
   function setupSelectionListeners(editorView: EditorView) {
     const handleSelectionChange = () => {
@@ -53,11 +53,11 @@
   let cleanupSelectionListeners: (() => void) | null = null;
 
   onMount(async () => {
+    const initialContent = content;
     editor = await Editor.make()
       .config((ctx) => {
         ctx.set(rootCtx, editorEl);
-        ctx.set(defaultValueCtx, content);
-        ctx.set(listenerCtx, {});
+        ctx.set(defaultValueCtx, initialContent);
       })
       .use(commonmark)
       .use(gfm)
@@ -67,55 +67,22 @@
 
     const listenerManager = editor.ctx.get(listenerCtx);
     listenerManager.markdownUpdated((_ctx, markdown, _prevMarkdown) => {
-      if (markdown !== lastContent) {
-        lastContent = markdown;
-        content = markdown;
-        onContentChange?.(markdown);
-      }
+      onContentChange?.(markdown);
     });
 
     const editorView = editor.ctx.get(editorViewCtx);
     cleanupSelectionListeners = setupSelectionListeners(editorView);
   });
 
-  // React to external content changes (e.g., parent loads new content)
+  // Cleanup on unmount
   $effect(() => {
-    if (!editor) return;
-    // Only replace content if it changed from outside (not from our own edit)
-    if (content !== lastContent) {
-      lastContent = content;
-      cleanupSelectionListeners?.();
-      cleanupSelectionListeners = null;
-
-      // Milkdown v7 doesn't have a clean setContent API, so destroy & recreate
-      editor.destroy();
-      editor = null;
-      Editor.make()
-        .config((ctx) => {
-          ctx.set(rootCtx, editorEl);
-          ctx.set(defaultValueCtx, content);
-          ctx.set(listenerCtx, {});
-        })
-        .use(commonmark)
-        .use(gfm)
-        .use(nord)
-        .use(listener)
-        .create()
-        .then((e) => {
-          editor = e;
-          const listenerManager = e.ctx.get(listenerCtx);
-          listenerManager.markdownUpdated((_ctx, markdown, _prevMarkdown) => {
-            if (markdown !== lastContent) {
-              lastContent = markdown;
-              content = markdown;
-              onContentChange?.(markdown);
-            }
-          });
-
-          const editorView = e.ctx.get(editorViewCtx);
-          cleanupSelectionListeners = setupSelectionListeners(editorView);
-        });
-    }
+    return () => {
+      if (editor) {
+        cleanupSelectionListeners?.();
+        editor.destroy();
+        editor = null;
+      }
+    };
   });
 
   $effect(() => {

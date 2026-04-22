@@ -47,5 +47,33 @@ public static class ConversionEndpoints
 
             return Results.Accepted(null, new { jobId, status = "queued" });
         });
+
+        // Retry chapter splitting (re-queues after timeout/error, resumes from last chapter)
+        group.MapPost("/split", async (
+            string slug,
+            AppDbContext db,
+            IConfiguration config,
+            IBackgroundJobClient jobClient) =>
+        {
+            if (string.IsNullOrWhiteSpace(slug) || slug.Contains("..") || slug.Contains('/') || slug.Contains('\\'))
+                return Results.BadRequest(new { error = "Invalid slug" });
+
+            var book = await db.Books.FirstOrDefaultAsync(b => b.Slug == slug);
+            if (book is null) return Results.NotFound(new { error = "Book not found" });
+
+            var libraryPath = config.GetValue<string>("Library:Path") ?? "/library";
+            var bookMd = Path.Combine(libraryPath, slug, "book.md");
+
+            if (!File.Exists(bookMd))
+                return Results.BadRequest(new { error = "No book.md found" });
+
+            book.Status = "splitting";
+            book.ErrorMessage = null;
+            book.UpdatedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+
+            var jobId = jobClient.Enqueue<ChapterSplitService>(x => x.SplitIntoChaptersAsync(slug));
+            return Results.Ok(new { jobId, status = "queued" });
+        });
     }
 }

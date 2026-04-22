@@ -24,12 +24,33 @@
   let error = $state('');
   let abortController: AbortController | null = $state(null);
   let inputEl: HTMLInputElement | undefined = $state();
+  let menuEl: HTMLDivElement | undefined = $state();
+  let dragOffset = $state<{ x: number; y: number } | null>(null);
 
-  $effect(() => {
-    if (visible && inputEl) {
-      inputEl.focus();
-    }
-  });
+  // Note: we intentionally do NOT auto-focus the input here.
+  // Focusing the input steals focus from the editor's contenteditable,
+  // which causes the browser to visually deselect the user's text selection.
+  // The user clicks the input when ready.
+
+  function startDrag(e: MouseEvent) {
+    if (!menuEl || (e.target as HTMLElement).closest('input, button')) return;
+    const rect = menuEl.getBoundingClientRect();
+    dragOffset = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    const onMove = (ev: MouseEvent) => {
+      if (!dragOffset || !menuEl) return;
+      const x = Math.max(0, Math.min(ev.clientX - dragOffset.x, window.innerWidth - menuEl.offsetWidth));
+      const y = Math.max(0, Math.min(ev.clientY - dragOffset.y, window.innerHeight - menuEl.offsetHeight));
+      menuEl.style.left = x + 'px';
+      menuEl.style.top = y + 'px';
+    };
+    const onUp = () => {
+      dragOffset = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
 
   $effect(() => {
     if (!visible) {
@@ -90,19 +111,27 @@
     }
   }
 
-  function handleBackdropClick(e: MouseEvent) {
-    if (e.target === e.currentTarget) {
+  function handleOutsideClick(e: MouseEvent) {
+    if (menuEl && !menuEl.contains(e.target as Node)) {
       dismiss();
     }
   }
+
+  $effect(() => {
+    if (visible) {
+      window.addEventListener('mousedown', handleOutsideClick);
+      return () => window.removeEventListener('mousedown', handleOutsideClick);
+    }
+  });
+
 </script>
 
 {#if visible}
-  <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <div class="backdrop" onclick={handleBackdropClick} role="presentation"></div>
   <div
+    bind:this={menuEl}
     class="inline-edit-menu"
-    style="top: {position.top}px; left: {position.left}px;"
+    style="top: {position.top + 10}px; left: {position.left}px;"
+    onmousedown={startDrag}
   >
     <input
       bind:this={inputEl}
@@ -135,22 +164,27 @@
 {/if}
 
 <style>
-  .backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 999;
-  }
-
   .inline-edit-menu {
     position: fixed;
     z-index: 1000;
     width: 320px;
     padding: 12px;
+    cursor: grab;
     background: var(--bg-secondary);
     border: 1px solid var(--border);
     border-radius: 8px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     transition: opacity 0.15s, transform 0.15s;
+  }
+
+  .inline-edit-menu:active {
+    cursor: grabbing;
+  }
+
+  .inline-edit-menu input,
+  .inline-edit-menu button,
+  .inline-edit-menu .edit-error {
+    cursor: default;
   }
 
   .edit-input {

@@ -53,6 +53,10 @@ export const api = {
     request<{ jobId: string; status: string }>(`/books/${slug}/lore`, {
       method: 'POST',
     }),
+  triggerChapterSplit: (slug: string) =>
+    request<{ jobId: string; status: string }>(`/books/${slug}/split`, {
+      method: 'POST',
+    }),
 
   // Chat history
   getChatHistory: (slug: string, limit = 100) =>

@@ -32,7 +32,6 @@
       const created = await api.insertChapter(slug, newTitle.trim(), afterId);
       chapters = [...chapters, created];
       newTitle = '';
-      activeChapterId = created.id;
       onChapterSelect?.(created.id);
     } catch (err) {
       console.error('Failed to add chapter:', err);
@@ -42,12 +41,16 @@
   }
 
   async function removeChapter(id: string) {
+    const chapter = chapters.find(c => c.id === id);
+    const title = chapter?.title ?? 'this chapter';
+    if (!confirm(`Delete "${title}"? This cannot be undone.`)) return;
     try {
       await api.deleteChapter(slug, id);
       chapters = chapters.filter(c => c.id !== id);
       if (activeChapterId === id) {
-        activeChapterId = chapters.length > 0 ? chapters[0].id : null;
-        if (activeChapterId) onChapterSelect?.(activeChapterId);
+        const next = chapters.length > 0 ? chapters[0].id : null;
+        if (next) onChapterSelect?.(next);
+        else activeChapterId = null;
       }
     } catch (err) {
       console.error('Failed to delete chapter:', err);
@@ -83,12 +86,19 @@
           <button
             class="chapter-item"
             class:active={activeChapterId === chapter.id}
-            onclick={() => { activeChapterId = chapter.id; onChapterSelect?.(chapter.id); }}
+            onclick={() => onChapterSelect?.(chapter.id)}
           >
             <span class="chapter-number">{chapter.number}</span>
             <span class="chapter-title">{chapter.title}</span>
             <span class="chapter-words">{chapter.wordCount}w</span>
-            <button class="delete-btn" onclick|stopPropagation={() => removeChapter(chapter.id)} title="Delete chapter">×</button>
+            <span
+              class="delete-btn"
+              role="button"
+              tabindex="0"
+              onclick={(e) => { e.stopPropagation(); removeChapter(chapter.id); }}
+              onkeydown={(e) => { if (e.key === 'Enter') removeChapter(chapter.id); }}
+              title="Delete chapter"
+            >×</span>
           </button>
         {/each}
       </div>

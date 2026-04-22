@@ -37,6 +37,7 @@ public class ChapterService
     {
         if (!Directory.Exists(chaptersDir)) return "001";
         var existing = Directory.GetFiles(chaptersDir, "ch-*.md")
+            .Where(f => !f.EndsWith(".scratch.md"))
             .Select(f => Path.GetFileName(f))
             .Where(f => f.StartsWith("ch-") && f.EndsWith(".md"))
             .Select(f => f.Substring(3, 3)) // extract "001" from "ch-001-..."
@@ -60,6 +61,7 @@ public class ChapterService
         if (!Directory.Exists(dir)) return Task.FromResult(new List<ChapterInfo>());
 
         var chapters = Directory.GetFiles(dir, "ch-*.md")
+            .Where(f => !f.EndsWith(".scratch.md"))
             .OrderBy(f => f)
             .Select((f, i) =>
             {
@@ -106,7 +108,7 @@ public class ChapterService
 
         // Get existing chapters
         var existing = Directory.Exists(dir)
-            ? Directory.GetFiles(dir, "ch-*.md").OrderBy(f => f).ToList()
+            ? Directory.GetFiles(dir, "ch-*.md").Where(f => !f.EndsWith(".scratch.md")).OrderBy(f => f).ToList()
             : new List<string>();
 
         // Determine insert position
@@ -171,7 +173,9 @@ public class ChapterService
         File.Delete(file);
 
         // Renumber remaining chapters
-        var remaining = Directory.GetFiles(dir, "ch-*.md").OrderBy(f => f).ToList();
+        var remaining = Directory.GetFiles(dir, "ch-*.md")
+            .Where(f => !f.EndsWith(".scratch.md"))
+            .OrderBy(f => f).ToList();
         for (int i = 0; i < remaining.Count; i++)
         {
             var oldName = Path.GetFileName(remaining[i]);
@@ -193,11 +197,11 @@ public class ChapterService
 
         // Read all existing files, map id -> content + title
         var chapters = new Dictionary<string, (string title, string content)>();
-        foreach (var f in Directory.GetFiles(dir, "ch-*.md"))
+        foreach (var file in Directory.GetFiles(dir, "ch-*.md").Where(x => !x.EndsWith(".scratch.md")))
         {
-            var id = Path.GetFileNameWithoutExtension(f);
-            var content = File.ReadAllText(f);
-            var title = f.Substring(f.LastIndexOf("ch-") + 7); // strip "ch-NNN-"
+            var id = Path.GetFileNameWithoutExtension(file);
+            var content = File.ReadAllText(file);
+            var title = file.Substring(file.LastIndexOf("ch-") + 7); // strip "ch-NNN-"
             title = title.Substring(0, title.Length - 3); // strip ".md"
             chapters[id] = (title, content);
         }
@@ -210,7 +214,7 @@ public class ChapterService
         }
 
         // Delete all existing files
-        foreach (var f in Directory.GetFiles(dir, "ch-*.md"))
+        foreach (var f in Directory.GetFiles(dir, "ch-*.md").Where(x => !x.EndsWith(".scratch.md")))
             File.Delete(f);
 
         // Re-create in new order

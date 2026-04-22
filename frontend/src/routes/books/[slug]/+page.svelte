@@ -202,17 +202,21 @@
   }
 
   async function handleChapterSelect(id: string) {
+    // Cancel any pending save so it doesn't overwrite the target chapter
+    if (saveTimeout) { clearTimeout(saveTimeout); saveTimeout = null; }
     // Clean up any active diff when switching chapters
     if (diffState && activeChapterId) {
       try { await api.rejectInlineEdit(slug, activeChapterId); } catch { /* ignore */ }
       diffState = null;
     }
     showInlineEdit = false;
-    activeChapterId = id;
     if (!slug) return;
     try {
       const chapter = await api.getChapter(slug, id);
-      if (chapter) content = chapter.content;
+      if (chapter) {
+        content = chapter.content;
+        activeChapterId = id;
+      }
     } catch { /* ignore */ }
   }
 
@@ -259,6 +263,16 @@
       // Ignore — scratch might not exist
     }
     diffState = null;
+  }
+
+  async function handleRetry() {
+    const msg = book.errorMessage ?? '';
+    if (msg.includes('splitting') || msg.includes('Splitting')) {
+      await api.triggerChapterSplit(slug);
+    } else {
+      await api.triggerLoreGeneration(slug);
+    }
+    startConversionPolling();
   }
 
   onMount(loadBook);
@@ -345,12 +359,14 @@
               onReject={handleRejectEdit}
             />
           {:else if content}
-            <BookEditor
-              bind:content
-              readonly={!isEditing}
-              onContentChange={(md) => { if (isEditing) debouncedSave(md); }}
-              onTextSelect={handleTextSelect}
-            />
+            {#key activeChapterId}
+              <BookEditor
+                {content}
+                readonly={!isEditing}
+                onContentChange={(md) => { if (isEditing) debouncedSave(md); }}
+                onTextSelect={handleTextSelect}
+              />
+            {/key}
           {:else}
             <div class="status-section">
               <p class="status-message">No content available yet.</p>
@@ -418,7 +434,7 @@
           {#if content}
             <div class="error-banner">
               <span>⚠️ {book.errorMessage || `Error: ${book.status}`}</span>
-              <button class="btn btn-retry" onclick={async () => { await api.triggerLoreGeneration(slug); startConversionPolling(); }}>Retry</button>
+              <button class="btn btn-retry" onclick={handleRetry}>Retry</button>
             </div>
             <ChapterSidebar bind:this={chapterSidebar} {slug} bind:activeChapterId onChapterSelect={handleChapterSelect} />
             {#if diffState}
@@ -429,12 +445,14 @@
                 onReject={handleRejectEdit}
               />
             {:else}
-              <BookEditor
-                bind:content
-                readonly={!isEditing}
-                onContentChange={(md) => { if (isEditing) debouncedSave(md); }}
-                onTextSelect={handleTextSelect}
-              />
+              {#key activeChapterId}
+                <BookEditor
+                  {content}
+                  readonly={!isEditing}
+                  onContentChange={(md) => { if (isEditing) debouncedSave(md); }}
+                  onTextSelect={handleTextSelect}
+                />
+              {/key}
             {/if}
           {:else}
             <div class="status-section">
