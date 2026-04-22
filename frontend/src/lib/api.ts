@@ -122,12 +122,17 @@ export const api = {
     onDone: () => void,
     onError?: (err: string) => void,
     onThinking?: (text: string) => void,
+    options?: { activeChapterId?: string | null; onEditDone?: (chapterId: string) => void },
   ): AbortController {
     const controller = new AbortController();
     fetch(`${BASE}/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bookSlug, message }),
+      body: JSON.stringify({
+        bookSlug,
+        message,
+        activeChapterId: options?.activeChapterId ?? null,
+      }),
       signal: controller.signal,
     })
       .then(async (res) => {
@@ -155,6 +160,10 @@ export const api = {
                   if (evt.type === 'agent_end') {
                     onDone();
                     return;
+                  } else if (evt.type === 'edit_done') {
+                    if (evt.chapterId) {
+                      options?.onEditDone?.(evt.chapterId);
+                    }
                   } else if (evt.type === 'message_update') {
                     const delta = evt.assistantMessageEvent;
                     if (delta?.type === 'text_delta') {
