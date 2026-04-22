@@ -47,7 +47,6 @@ public static class ChatEndpoints
             var wikiDir = Path.Combine(libraryPath, req.BookSlug, "wiki");
             var chaptersDir = Path.Combine(libraryPath, req.BookSlug, "chapters");
 
-            // ── Build context ──────────────────────────────────────────────
             var contextParts = new List<string>();
             var chapterFiles = Array.Empty<string>();
             string? activeChapterTitle = null;
@@ -62,7 +61,6 @@ public static class ChatEndpoints
 
                 if (chapterFiles.Length > 0)
                 {
-                    // Chapter TOC
                     var chapterList = new StringBuilder("# Chapters\n\n");
                     for (int i = 0; i < chapterFiles.Length; i++)
                     {
@@ -74,7 +72,6 @@ public static class ChatEndpoints
                 }
             }
 
-            // Active chapter content (always include if available)
             if (!string.IsNullOrEmpty(req.ActiveChapterId) && Directory.Exists(chaptersDir))
             {
                 var activeFile = Path.Combine(chaptersDir, $"{req.ActiveChapterId}.md");
@@ -105,7 +102,6 @@ public static class ChatEndpoints
                     var match = false;
                     if (!string.IsNullOrEmpty(title) && msgLower.Contains(title.ToLowerInvariant()))
                         match = true;
-                    // Match "chapter N"
                     if (int.TryParse(msgLower.Replace("chapter", "").Trim(), out var chNum))
                     {
                         var idx = Array.IndexOf(chapterFiles, chFile);
@@ -136,46 +132,25 @@ public static class ChatEndpoints
 
             var context = string.Join("\n\n---\n\n", contextParts);
 
-            // ── Detect edit intent ─────────────────────────────────────────
             var hasEditIntent = DetectEditIntent(req.Message ?? "");
 
-            // ── Agent session ──────────────────────────────────────────────
             var mode = hasEditIntent ? "write" : "read";
             var sessionId = await agentService.EnsureSessionAsync(req.BookSlug, mode, ct);
 
-            // Inject context on fresh sessions
-            try
-            {
-                var info = await agentService.GetSessionInfoAsync(sessionId, ct);
-                if (info.MessageCount == 0)
-                {
-                    var contextPrompt = hasEditIntent
-                        ? $"You are helping edit a book. You have access to the full book context.\n\n{context}\n\nWhen the user asks you to modify or rewrite content, write the COMPLETE modified chapter to the scratch file path they specify. Keep everything else the same unless instructed otherwise."
-                        : $"You are answering questions about the book. You have access to the full book context.\n\n{context}";
-                    await agentService.SendPromptAsync(sessionId, contextPrompt, ct);
-                }
-            }
-            catch
-            {
-                // Session info failed — inject context anyway
-                try
-                {
-                    var contextPrompt = $"You are helping with a book.\n\n{context}";
-                    await agentService.SendPromptAsync(sessionId, contextPrompt, ct);
-                }
-                catch { }
-            }
-
-            // ── Build user prompt ──────────────────────────────────────────
             string userPrompt;
             string? scratchChapterId = null;
 
             if (hasEditIntent && !string.IsNullOrEmpty(req.ActiveChapterId))
             {
-                // Instruct agent to write scratch file
-                scratchChapterId = req.ActiveChapterId;
+                // Write session: combine context + instruction into ONE streaming prompt
+                // (avoids blocking SendPromptAsync delay with deepseek-reasoner)
+                scratchChapterId = req.ActiveChapterId!;
                 var scratchPath = $"chapters/{req.ActiveChapterId}.scratch.md";
                 var sb = new StringBuilder();
+                sb.AppendLine("You are helping edit a book. Write the COMPLETE modified chapter to the specified scratch file.");
+                sb.AppendLine();
+                sb.AppendLine(context);
+                sb.AppendLine();
                 sb.AppendLine($"User request: {req.Message}");
                 sb.AppendLine();
                 sb.AppendLine($"IMPORTANT: Write the COMPLETE modified chapter to: {scratchPath}");
@@ -184,15 +159,31 @@ public static class ChatEndpoints
             }
             else if (hasEditIntent && string.IsNullOrEmpty(req.ActiveChapterId))
             {
-                // Edit intent but no chapter selected — just answer, no file write
                 userPrompt = $"User: {req.Message}\n\nNote: No chapter is currently active. Tell the user to select a chapter first if they want to edit.";
             }
             else
             {
+                // Read session: inject context on fresh sessions via blocking call
+                try
+                {
+                    var info = await agentService.GetSessionInfoAsync(sessionId, ct);
+                    if (info.MessageCount == 0)
+                    {
+                        var contextPrompt = $"You are answering questions about the book. You have access to the full book context.\n\n{context}";
+                        await agentService.SendPromptAsync(sessionId, contextPrompt, ct);
+                    }
+                }
+                catch
+                {
+                    try
+                    {
+                        await agentService.SendPromptAsync(sessionId, $"You are helping with a book.\n\n{context}", ct);
+                    }
+                    catch { }
+                }
                 userPrompt = $"User: {req.Message}";
             }
 
-            // ── Save user message ──────────────────────────────────────────
             if (book is not null)
             {
                 db.ChatMessages.Add(new ChatMessage
@@ -205,7 +196,6 @@ public static class ChatEndpoints
                 await db.SaveChangesAsync(ct);
             }
 
-            // ── Stream response ────────────────────────────────────────────
             var assistantText = "";
             await foreach (var evt in agentService.StreamPromptAsync(sessionId, userPrompt, ct))
             {
@@ -229,7 +219,6 @@ public static class ChatEndpoints
                 catch { }
             }
 
-            // ── Edit done event ────────────────────────────────────────────
             if (hasEditIntent && scratchChapterId != null)
             {
                 var scratchFile = Path.Combine(libraryPath, req.BookSlug, "chapters", $"{scratchChapterId}.scratch.md");
@@ -249,7 +238,6 @@ public static class ChatEndpoints
                 }
             }
 
-            // ── Save assistant response ────────────────────────────────────
             if (book is not null && !string.IsNullOrEmpty(assistantText))
             {
                 db.ChatMessages.Add(new ChatMessage
@@ -270,9 +258,6 @@ public static class ChatEndpoints
         });
     }
 
-    /// <summary>
-    /// Simple keyword-based edit intent detection.
-    /// </summary>
     private static bool DetectEditIntent(string message)
     {
         if (string.IsNullOrWhiteSpace(message)) return false;
