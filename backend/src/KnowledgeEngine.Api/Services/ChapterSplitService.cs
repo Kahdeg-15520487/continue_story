@@ -397,7 +397,7 @@ public class ChapterSplitService
             List<ChapterTitle>? titles;
             try
             {
-                titles = System.Text.Json.JsonSerializer.Deserialize<List<ChapterTitle>>(cleaned);
+                titles = System.Text.Json.JsonSerializer.Deserialize<List<ChapterTitle>>(cleaned, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             }
             catch (Exception ex)
             {
