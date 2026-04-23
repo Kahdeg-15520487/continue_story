@@ -153,18 +153,6 @@ function handleSessionEvent(session: ManagedSession, event: AgentSessionEvent) {
         const total = (usage.input || 0) + (usage.output || 0);
         session.tokenCount += total;
       }
-      if (session.tokenCount > COMPACT_THRESHOLD_TOKENS) {
-        console.log(`[session:${shortId(session.id)}] auto-compacting (tokens: ${session.tokenCount})`);
-        const sessionRef = session;
-        session.session.compact(
-          "Summarize the conversation, keeping key facts about the book that were discussed. Preserve any analysis or interpretations shared."
-        ).then(() => {
-          sessionRef.tokenCount = 0;
-          console.log(`[session:${shortId(sessionRef.id)}] compacted`);
-        }).catch((err: any) => {
-          console.error(`[session:${shortId(sessionRef.id)}] compact failed: ${err.message}`);
-        });
-      }
       break;
     }
     case "agent_end": {
@@ -486,10 +474,33 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       res.write(`data: ${JSON.stringify(event)}\n\n`);
 
       if (event.type === "agent_end") {
-        setTimeout(() => {
-          sseUnsubscribe();
-          res.end();
-        }, 500);
+        // Check if we need to compact + continue
+        if (managed.tokenCount > COMPACT_THRESHOLD_TOKENS) {
+          console.log(`[session:${shortId(managed.id)}] post-response auto-compacting (tokens: ${managed.tokenCount})`);
+          managed.session.compact(
+            "Summarize the conversation so far. Preserve: 1) What the user asked, 2) What changes were made and to which files, 3) What still needs to be done."
+          ).then(async () => {
+            managed.tokenCount = 0;
+            console.log(`[session:${shortId(managed.id)}] compacted, continuing task`);
+            // Send continuation prompt
+            try {
+              await managed.session.prompt("Review what you've done so far. If there are any remaining changes to complete the user's original request, continue. If everything is done, summarize what was changed.");
+            } catch (err: any) {
+              console.error(`[session:${shortId(managed.id)}] continuation failed: ${err.message}`);
+              sseUnsubscribe();
+              res.end();
+            }
+          }).catch((err: any) => {
+            console.error(`[session:${shortId(managed.id)}] compact failed: ${err.message}`);
+            sseUnsubscribe();
+            res.end();
+          });
+        } else {
+          setTimeout(() => {
+            sseUnsubscribe();
+            res.end();
+          }, 500);
+        }
       }
     });
 
