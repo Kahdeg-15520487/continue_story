@@ -1,3 +1,4 @@
+using Hangfire;
 using KnowledgeEngine.Api.Services;
 using Microsoft.EntityFrameworkCore;
 using KnowledgeEngine.Api.Data;
@@ -83,6 +84,14 @@ public static class ChapterEndpoints
             {
                 return Results.NotFound(new { error = ex.Message });
             }
+        });
+
+        // Regenerate chapter titles
+        group.MapPost("/regenerate-titles", (string slug, IBackgroundJobClient jobClient) =>
+        {
+            if (InvalidSlug(slug)) return Results.BadRequest(new { error = "Invalid slug" });
+            var jobId = jobClient.Enqueue<ChapterSplitService>(x => x.GenerateChapterTitlesAsync(slug));
+            return Results.Ok(new { queued = true, jobId });
         });
     }
 

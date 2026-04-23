@@ -113,7 +113,7 @@ public class ChapterSplitService
             _logger.LogInformation("Split {Slug} into {Count} chapters", slug, finalCount);
 
             // Step 5: Generate chapter titles via LLM
-            await GenerateChapterTitlesAsync(agentService, slug, chaptersDir);
+            await GenerateChapterTitlesAsync(slug);
 
             // Step 6: Enqueue lore generation
             var jobClient = scope.ServiceProvider.GetRequiredService<IBackgroundJobClient>();
@@ -329,8 +329,13 @@ public class ChapterSplitService
     /// Ask the LLM to generate descriptive titles for each chapter based on their openings.
     /// Renames the files to use the generated titles.
     /// </summary>
-    private async Task GenerateChapterTitlesAsync(IAgentService agentService, string slug, string chaptersDir)
+    public async Task GenerateChapterTitlesAsync(string slug)
     {
+        using var scope = _scopeFactory.CreateScope();
+        var agentService = scope.ServiceProvider.GetRequiredService<IAgentService>();
+
+        var chaptersDir = Path.Combine(_config.GetValue<string>("Library:Path") ?? "/library", slug, "chapters");
+
         var chapterFiles = Directory.GetFiles(chaptersDir, "ch-*.md")
             .Where(f => !f.EndsWith(".scratch.md"))
             .OrderBy(f => f)

@@ -13,6 +13,8 @@
   let adding = $state(false);
   let newTitle = $state('');
   let collapsed = $state(false);
+  let showMenu = $state(false);
+  let regenerating = $state(false);
 
   async function loadChapters() {
     try {
@@ -57,6 +59,21 @@
     }
   }
 
+  async function regenerateTitles() {
+    if (regenerating) return;
+    regenerating = true;
+    showMenu = false;
+    try {
+      await api.regenerateTitles(slug);
+      // Give the job a moment to run, then refresh
+      setTimeout(() => { loadChapters(); }, 3000);
+    } catch (err) {
+      console.error('Failed to regenerate titles:', err);
+    } finally {
+      regenerating = false;
+    }
+  }
+
   async function refresh() {
     await loadChapters();
   }
@@ -65,14 +82,29 @@
     loadChapters();
   });
 
+  function handleClickOutside(e: MouseEvent) {
+    if (showMenu) showMenu = false;
+  }
+
   export { refresh };
 </script>
 
 {#if !collapsed}
-  <div class="sidebar">
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="sidebar" onclick={handleClickOutside}>
     <div class="sidebar-header">
       <span class="sidebar-title">Chapters</span>
       <span class="chapter-count">{chapters.length}</span>
+      <div class="menu-wrapper">
+        <button class="icon-btn" onclick={(e) => { e.stopPropagation(); showMenu = !showMenu; }} title="More actions">⋯</button>
+        {#if showMenu}
+          <div class="menu-dropdown" class:regenerating>
+            <button class="menu-item" onclick={regenerateTitles} disabled={regenerating}>
+              {regenerating ? 'Regenerating...' : 'Regenerate Titles'}
+            </button>
+          </div>
+        {/if}
+      </div>
       <button class="icon-btn" onclick={() => collapsed = true} title="Collapse">◀</button>
     </div>
 
@@ -168,6 +200,46 @@
 
   .icon-btn:hover {
     background: var(--bg-tertiary);
+  }
+
+  .menu-wrapper {
+    position: relative;
+  }
+
+  .menu-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 4px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    z-index: 100;
+    min-width: 160px;
+    padding: 4px;
+  }
+
+  .menu-item {
+    display: block;
+    width: 100%;
+    padding: 6px 10px;
+    background: none;
+    border: none;
+    color: var(--text-primary);
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+    border-radius: 4px;
+  }
+
+  .menu-item:hover:not(:disabled) {
+    background: var(--bg-tertiary);
+  }
+
+  .menu-item:disabled {
+    color: var(--text-secondary);
+    cursor: not-allowed;
   }
 
   .sidebar-empty {

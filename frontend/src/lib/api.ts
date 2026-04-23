@@ -103,6 +103,11 @@ export const api = {
       body: JSON.stringify({ orderedIds }),
     }),
 
+  regenerateTitles: (slug: string) =>
+    request<{ queued: boolean; jobId: string }>(`/books/${slug}/chapters/regenerate-titles`, {
+      method: 'POST',
+    }),
+
   // Agent session management
   getChatSession: (slug: string) =>
     request<{ sessionId: string }>(`/books/${slug}/chat/session`),
