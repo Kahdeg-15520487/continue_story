@@ -173,8 +173,8 @@ export const api = {
                 try {
                   const evt = JSON.parse(line.slice(6));
                   if (evt.type === 'agent_end') {
+                    // Don't return — there may be more events (edit_done, session_info)
                     onDone();
-                    return;
                   } else if (evt.type === 'session_info') {
                     if (evt.sessionId) {
                       options?.onSessionInfo?.(evt.sessionId);

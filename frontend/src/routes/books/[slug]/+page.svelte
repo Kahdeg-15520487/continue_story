@@ -173,6 +173,16 @@
         if (chapter) {
           activeChapterId = tryChapterId;
           content = chapter.content;
+
+          // Check for pending scratch file (agent may have edited while page was closed)
+          try {
+            const scratch = await api.getScratchContent(slug, tryChapterId);
+            if (scratch?.content) {
+              diffState = { original: chapter.content, scratch: scratch.content };
+              showInlineEdit = true;
+            }
+          } catch { /* no scratch file */ }
+
           // Restore scroll after render
           if (saved?.scrollTop) {
             setTimeout(() => {
