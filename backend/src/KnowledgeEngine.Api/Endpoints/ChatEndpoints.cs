@@ -165,7 +165,17 @@ public static class ChatEndpoints
 
             if (!string.IsNullOrEmpty(req.SessionId))
             {
-                sessionId = req.SessionId;
+                // Verify the session still exists on the agent
+                try
+                {
+                    await agentService.GetSessionInfoAsync(req.SessionId, ct);
+                    sessionId = req.SessionId;
+                }
+                catch
+                {
+                    // Session gone (agent restarted), create a new one
+                    sessionId = await agentService.EnsureSessionAsync(req.BookSlug, ct);
+                }
             }
             else
             {
