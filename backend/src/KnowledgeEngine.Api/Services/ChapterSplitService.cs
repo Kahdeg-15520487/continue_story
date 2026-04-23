@@ -112,7 +112,10 @@ public class ChapterSplitService
             var finalCount = Directory.GetFiles(chaptersDir, "ch-*.md").Where(f => !f.EndsWith(".scratch.md")).Count();
             _logger.LogInformation("Split {Slug} into {Count} chapters", slug, finalCount);
 
-            // Step 5: Enqueue lore generation
+            // Step 5: Generate chapter titles via LLM
+            await GenerateChapterTitlesAsync(agentService, slug, chaptersDir);
+
+            // Step 6: Enqueue lore generation
             var jobClient = scope.ServiceProvider.GetRequiredService<IBackgroundJobClient>();
             jobClient.Enqueue<LoreJobService>(x => x.GenerateLoreAsync(slug));
             _logger.LogInformation("Lore generation enqueued for {Slug}", slug);
@@ -323,6 +326,126 @@ public class ChapterSplitService
     }
 
     /// <summary>
+    /// Ask the LLM to generate descriptive titles for each chapter based on their openings.
+    /// Renames the files to use the generated titles.
+    /// </summary>
+    private async Task GenerateChapterTitlesAsync(IAgentService agentService, string slug, string chaptersDir)
+    {
+        var chapterFiles = Directory.GetFiles(chaptersDir, "ch-*.md")
+            .Where(f => !f.EndsWith(".scratch.md"))
+            .OrderBy(f => f)
+            .ToArray();
+
+        if (chapterFiles.Length == 0) return;
+
+        // Build a batch of chapter openings
+        var sb = new StringBuilder();
+        sb.AppendLine("Generate a short, descriptive title (3-8 words) for each chapter based on its opening content.");
+        sb.AppendLine();
+        sb.AppendLine("Return ONLY a JSON array of objects with \"index\" (1-based) and \"title\" fields.");
+        sb.AppendLine("Example: [{\"index\":1,\"title\":\"The Awakening\"}, {\"index\":2,\"title\":\"Journey to the Forest\"}]");
+        sb.AppendLine();
+        sb.AppendLine("Rules:");
+        sb.AppendLine("- Each title should be 3-8 words, capitalized like a book chapter title");
+        sb.AppendLine("- Titles should reflect the content/themes of the chapter, not just copy the first line");
+        sb.AppendLine("- Return ONLY the JSON array, nothing else — no markdown, no code fences, no explanation");
+        sb.AppendLine();
+
+        for (int i = 0; i < chapterFiles.Length; i++)
+        {
+            var content = await File.ReadAllTextAsync(chapterFiles[i]);
+            // Take first 500 chars as the opening
+            var opening = content.Length > 500 ? content[..500] : content;
+            // Strip any existing heading for cleaner analysis
+            var lines = opening.Split('\n');
+            if (lines.Length > 0 && lines[0].TrimStart().StartsWith("# "))
+                lines[0] = "";
+            opening = string.Join("\n", lines).Trim();
+            if (opening.Length > 500) opening = opening[..500];
+
+            sb.AppendLine($"Chapter {i + 1}:");
+            sb.AppendLine(opening);
+            sb.AppendLine();
+        }
+
+        var sessionId = await agentService.EnsureSessionAsync(slug);
+        try
+        {
+            _logger.LogInformation("Generating titles for {Count} chapters", chapterFiles.Length);
+            var response = await agentService.SendPromptAsync(sessionId, sb.ToString());
+
+            // Parse response
+            var cleaned = response.Trim();
+            if (cleaned.StartsWith("`"))
+            {
+                var lines = cleaned.Split('\n');
+                lines = lines.SkipWhile(l => l.TrimStart().StartsWith("`")).ToArray();
+                var remaining = lines.ToList();
+                var fenceIdx = remaining.FindIndex(l => l.TrimStart().StartsWith("`"));
+                if (fenceIdx >= 0) remaining = remaining.Take(fenceIdx).ToList();
+                lines = remaining.ToArray();
+                cleaned = string.Join('\n', lines).Trim();
+            }
+
+            _logger.LogInformation("Title generation response: {Response}", cleaned);
+
+            List<ChapterTitle>? titles;
+            try
+            {
+                titles = System.Text.Json.JsonSerializer.Deserialize<List<ChapterTitle>>(cleaned);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to parse title JSON: {Response}", cleaned);
+                return;
+            }
+
+            if (titles == null || titles.Count == 0) return;
+
+            // Rename files with generated titles
+            for (int i = 0; i < chapterFiles.Length && i < titles.Count; i++)
+            {
+                var title = titles[i].Title?.Trim() ?? $"Chapter {i + 1}";
+                var slugTitle = Slugify(title);
+                var oldPath = chapterFiles[i];
+                var oldName = Path.GetFileName(oldPath);
+
+                // Extract the ch-XXX prefix
+                var numberPrefix = oldName.Split('-').Length > 1
+                    ? oldName.Split('-')[0] + "-" + oldName.Split('-')[1]
+                    : $"ch-{(i + 1):D3}";
+                var newName = $"{numberPrefix}-{slugTitle}.md";
+                var newPath = Path.Combine(chaptersDir, newName);
+
+                if (oldPath != newPath)
+                {
+                    // Update the heading inside the file
+                    var content = await File.ReadAllTextAsync(oldPath);
+                    var lines = content.Split('\n');
+                    if (lines.Length > 0 && lines[0].TrimStart().StartsWith("# "))
+                        lines[0] = $"# {title}";
+                    else
+                        lines = new[] { $"# {title}" }.Concat(lines).ToArray();
+                    await File.WriteAllTextAsync(oldPath, string.Join("\n", lines));
+
+                    File.Move(oldPath, newPath, overwrite: true);
+                    _logger.LogInformation("Renamed {Old} → {New}", oldName, newName);
+                }
+            }
+
+            _logger.LogInformation("Generated and applied {Count} chapter titles", titles.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Title generation failed for {Slug}, keeping default titles", slug);
+        }
+        finally
+        {
+            try { await agentService.KillSessionAsync(sessionId); } catch { }
+        }
+    }
+
+    /// <summary>
     /// Simple slugify: lowercase, spaces to hyphens, strip special chars.
     /// </summary>
     private static string Slugify(string title)
@@ -340,4 +463,6 @@ public class ChapterSplitService
 
         return string.IsNullOrWhiteSpace(slug) ? "untitled" : slug;
     }
+
+    private record ChapterTitle(int Index, string? Title);
 }
