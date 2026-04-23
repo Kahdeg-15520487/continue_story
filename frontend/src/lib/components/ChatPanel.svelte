@@ -32,6 +32,7 @@
 
   onMount(async () => {
     try {
+      // Get or create agent session
       const sessionResult = await api.getChatSession(slug);
       currentSessionId = sessionResult.sessionId;
     } catch {
@@ -39,11 +40,16 @@
     }
 
     try {
-      const history = await api.getChatHistory(slug, 100, currentSessionId ?? undefined);
+      // Load ALL chat history for this book (not filtered by session)
+      const history = await api.getChatHistory(slug, 100);
       messages = history.map(m => ({
         role: m.role as 'user' | 'assistant',
         text: m.content,
       }));
+      // Use the session ID from the most recent message if available
+      if (history.length > 0 && history[history.length - 1].sessionId) {
+        currentSessionId = history[history.length - 1].sessionId;
+      }
     } catch {
       // No history yet
     }
