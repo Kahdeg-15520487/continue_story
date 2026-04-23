@@ -19,7 +19,8 @@
   let editorEl: HTMLDivElement;
   let wrapperEl: HTMLDivElement;
   let editor: Editor | null = $state(null);
-  
+  let lastContent = '';
+  let ignoreNextUpdate = false;
 
   function setupSelectionListeners(editorView: EditorView) {
     const handleSelectionChange = () => {
@@ -54,9 +55,12 @@
 
   let cleanupSelectionListeners: (() => void) | null = null;
 
-  onMount(async () => {
-    const initialContent = content;
-    editor = await Editor.make()
+  async function createEditor(initialContent: string) {
+    cleanupSelectionListeners?.();
+    editor?.destroy();
+    editor = null;
+
+    const newEditor = await Editor.make()
       .config((ctx) => {
         ctx.set(rootCtx, editorEl);
         ctx.set(defaultValueCtx, initialContent);
@@ -67,13 +71,22 @@
       .use(listener)
       .create();
 
-    const listenerManager = editor.ctx.get(listenerCtx);
+    const listenerManager = newEditor.ctx.get(listenerCtx);
     listenerManager.markdownUpdated((_ctx, markdown, _prevMarkdown) => {
-      onContentChange?.(markdown);
+      if (!ignoreNextUpdate) {
+        lastContent = markdown;
+        onContentChange?.(markdown);
+      }
     });
 
-    const editorView = editor.ctx.get(editorViewCtx);
+    const editorView = newEditor.ctx.get(editorViewCtx);
     cleanupSelectionListeners = setupSelectionListeners(editorView);
+    editor = newEditor;
+  }
+
+  onMount(() => {
+    lastContent = content;
+    createEditor(content);
   });
 
   // Cleanup on unmount
@@ -85,6 +98,14 @@
         editor = null;
       }
     };
+  });
+
+  // When content prop changes externally, recreate editor with new content
+  $effect(() => {
+    if (content === lastContent || !editor) return;
+    lastContent = content;
+    ignoreNextUpdate = true;
+    createEditor(content).then(() => { ignoreNextUpdate = false; });
   });
 
   $effect(() => {

@@ -279,17 +279,18 @@ public static class ChatEndpoints
                 catch { }
             }
 
-            // ── Check for scratch file ─────────────────────────────────────
-            if (!string.IsNullOrEmpty(req.ActiveChapterId))
+            // ── Check for scratch files or direct edits ────────────────────
+            if (Directory.Exists(chaptersDir))
             {
-                var scratchFile = Path.Combine(libraryPath, req.BookSlug, "chapters", $"{req.ActiveChapterId}.scratch.md");
-                if (File.Exists(scratchFile))
+                // Check for scratch files for ANY chapter
+                foreach (var scratchFile in Directory.GetFiles(chaptersDir, "*.scratch.md"))
                 {
+                    var chapterId = Path.GetFileName(scratchFile).Replace(".scratch.md", "");
                     var doneEvent = JsonSerializer.Serialize(new
                     {
                         type = "edit_done",
-                        chapterId = req.ActiveChapterId,
-                        scratchPath = $"chapters/{req.ActiveChapterId}.scratch.md",
+                        chapterId,
+                        scratchPath = $"chapters/{Path.GetFileName(scratchFile)}",
                         source = "chat"
                     });
                     await response.WriteAsync($"data: {doneEvent}\n\n", ct);
