@@ -13,6 +13,9 @@
     onReject: () => void;
   } = $props();
 
+  type ViewMode = 'diff' | 'original' | 'scratch';
+  let viewMode: ViewMode = $state('diff');
+
   let chunks = $derived(diffLines(originalContent, scratchContent));
 
   let addedCount = $derived(
@@ -26,35 +29,63 @@
 
 <div class="diff-overlay">
   <div class="diff-header">
-    <span class="diff-title">AI Edit Preview</span>
-    <div class="diff-stats">
-      <span class="stat-added">+{addedCount} lines added</span>
-      <span class="stat-removed">-{removedCount} lines removed</span>
+    <div class="diff-header-left">
+      <span class="diff-title">AI Edit Preview</span>
+      <div class="view-tabs">
+        <button class="view-tab" class:active={viewMode === 'diff'} onclick={() => viewMode = 'diff'}>
+          Diff
+        </button>
+        <button class="view-tab" class:active={viewMode === 'original'} onclick={() => viewMode = 'original'}>
+          Original
+        </button>
+        <button class="view-tab" class:active={viewMode === 'scratch'} onclick={() => viewMode = 'scratch'}>
+          Edited
+        </button>
+      </div>
     </div>
+    {#if viewMode === 'diff'}
+      <div class="diff-stats">
+        <span class="stat-added">+{addedCount} lines</span>
+        <span class="stat-removed">-{removedCount} lines</span>
+      </div>
+    {:else}
+      <div class="diff-stats">
+        <span class="stat-label">{viewMode === 'original' ? 'Current saved version' : 'Agent\'s proposed version'}</span>
+      </div>
+    {/if}
   </div>
+
   <div class="diff-content">
-    {#each chunks as chunk}
-      {#if chunk.added}
-        {#each chunk.value.split('\n') as line}
-          {#if line}
-            <div class="diff-line added"><span class="line-num">+</span>{line}</div>
-          {/if}
-        {/each}
-      {:else if chunk.removed}
-        {#each chunk.value.split('\n') as line}
-          {#if line}
-            <div class="diff-line removed"><span class="line-num">-</span>{line}</div>
-          {/if}
-        {/each}
-      {:else}
-        {#each chunk.value.split('\n') as line}
-          {#if line}
-            <div class="diff-line"><span class="line-num">{'\u00A0'}</span>{line}</div>
-          {/if}
-        {/each}
-      {/if}
-    {/each}
+    {#if viewMode === 'diff'}
+      {#each chunks as chunk}
+        {#if chunk.added}
+          {#each chunk.value.split('\n') as line}
+            {#if line}
+              <div class="diff-line added"><span class="line-num">+</span>{line}</div>
+            {/if}
+          {/each}
+        {:else if chunk.removed}
+          {#each chunk.value.split('\n') as line}
+            {#if line}
+              <div class="diff-line removed"><span class="line-num">-</span>{line}</div>
+            {/if}
+          {/each}
+        {:else}
+          {#each chunk.value.split('\n') as line}
+            {#if line}
+              <div class="diff-line"><span class="line-num">{'\u00A0'}</span>{line}</div>
+            {/if}
+          {/each}
+        {/if}
+      {/each}
+    {:else}
+      {@const plainContent = viewMode === 'original' ? originalContent : scratchContent}
+      {#each plainContent.split('\n') as line}
+        <div class="diff-line"><span class="line-num">{'\u00A0'}</span>{line}</div>
+      {/each}
+    {/if}
   </div>
+
   <div class="diff-actions">
     <button class="btn-accept" onclick={onAccept}>✓ Accept</button>
     <button class="btn-reject" onclick={onReject}>✗ Reject</button>
@@ -75,10 +106,16 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 12px 16px;
+    padding: 8px 16px;
     border-bottom: 1px solid var(--border);
     background: var(--bg-secondary);
     z-index: 1;
+  }
+
+  .diff-header-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
   }
 
   .diff-title {
@@ -87,19 +124,45 @@
     color: var(--text-primary);
   }
 
+  .view-tabs {
+    display: flex;
+    gap: 2px;
+    background: var(--bg-tertiary);
+    border-radius: 6px;
+    padding: 2px;
+  }
+
+  .view-tab {
+    padding: 4px 12px;
+    font-size: 12px;
+    font-weight: 500;
+    border: none;
+    border-radius: 4px;
+    background: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .view-tab:hover {
+    color: var(--text-primary);
+  }
+
+  .view-tab.active {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  }
+
   .diff-stats {
     display: flex;
     gap: 12px;
     font-size: 12px;
   }
 
-  .stat-added {
-    color: #3fb950;
-  }
-
-  .stat-removed {
-    color: #f85149;
-  }
+  .stat-added { color: #3fb950; }
+  .stat-removed { color: #f85149; }
+  .stat-label { color: var(--text-secondary); }
 
   .diff-content {
     flex: 1;
