@@ -14,6 +14,7 @@ services:
       - SQLITE_PATH=/data/knowledge-engine.db
       - AGENT_HOST=agent
       - AGENT_PORT=3001
+    restart: unless-stopped
     depends_on:
       agent:
         condition: service_started
@@ -32,6 +33,7 @@ services:
       - ./frontend/static:/app/static
       - ./frontend/svelte.config.js:/app/svelte.config.js
       - ./frontend/vite.config.ts:/app/vite.config.ts
+    restart: unless-stopped
     depends_on:
       api:
         condition: service_started
@@ -55,6 +57,7 @@ services:
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
       - PI_MODEL=${PI_MODEL:-}
       - MAX_SESSIONS=${MAX_SESSIONS:-10}
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:3001/health"]
       interval: 10s
