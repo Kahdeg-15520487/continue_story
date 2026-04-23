@@ -174,6 +174,13 @@ function handleSessionEvent(session: ManagedSession, event: AgentSessionEvent) {
       console.log(`[session:${shortId(session.id)}] done: ${text.length} chars, ${tools} tool calls, ${session.tokenCount} tokens`);
       break;
     }
+    case "message_update": {
+      const delta = event.assistantMessageEvent;
+      if (delta.type === "text_delta") {
+        session.responseText += delta.delta;
+      }
+      break;
+    }
     case "extension_error":
       console.error(`[session:${shortId(session.id)}] extension error: ${event.error || "unknown"}`);
       if (session.responseReject) {
