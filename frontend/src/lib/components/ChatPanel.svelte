@@ -31,10 +31,13 @@
   });
 
   onMount(async () => {
+    let agentSessionId: string | null = null;
+
     try {
-      // Get or create agent session
+      // Get the agent's current active session
       const sessionResult = await api.getChatSession(slug);
-      currentSessionId = sessionResult.sessionId;
+      agentSessionId = sessionResult.sessionId;
+      currentSessionId = agentSessionId;
     } catch {
       // Session will be created on first message
     }
@@ -46,10 +49,6 @@
         role: m.role as 'user' | 'assistant',
         text: m.content,
       }));
-      // Use the session ID from the most recent message if available
-      if (history.length > 0 && history[history.length - 1].sessionId) {
-        currentSessionId = history[history.length - 1].sessionId;
-      }
     } catch {
       // No history yet
     }
