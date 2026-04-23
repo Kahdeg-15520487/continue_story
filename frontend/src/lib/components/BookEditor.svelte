@@ -8,14 +8,16 @@
   import '@milkdown/theme-nord/style.css';
   import { listener, listenerCtx } from '@milkdown/plugin-listener';
 
-  let { content = '', readonly = $bindable(false), onContentChange, onTextSelect }: {
+  let { content = '', readonly = $bindable(false), onContentChange, onTextSelect, onScroll }: {
     content: string;
     readonly: boolean;
     onContentChange?: (markdown: string) => void;
     onTextSelect?: (text: string, range: { from: number; to: number }, coords: { top: number; left: number }) => void;
+    onScroll?: () => void;
   } = $props();
 
   let editorEl: HTMLDivElement;
+  let wrapperEl: HTMLDivElement;
   let editor: Editor | null = $state(null);
   
 
@@ -97,7 +99,7 @@
   });
 </script>
 
-<div class="milkdown-wrapper" class:readonly>
+<div class="milkdown-wrapper" class:readonly bind:this={wrapperEl} onscroll={onScroll}>
   <div bind:this={editorEl}></div>
 </div>
 

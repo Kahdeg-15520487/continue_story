@@ -30,6 +30,33 @@
   let activeChapterId: string | null = $state(null);
   let chapterSidebar: ChapterSidebar | null = $state(null);
 
+  // Reading position persistence
+  const STORAGE_KEY = `reading-pos-${slug}`;
+
+  function saveReadingPosition() {
+    if (!activeChapterId) return;
+    const wrapper = document.querySelector('.editor-pane .milkdown-wrapper') as HTMLDivElement | null;
+    const scrollTop = wrapper?.scrollTop ?? 0;
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ chapterId: activeChapterId, scrollTop }));
+    } catch { }
+  }
+
+  function restoreReadingPosition(): { chapterId: string; scrollTop: number } | null {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch { return null; }
+  }
+
+  // Debounced scroll save
+  let scrollSaveTimeout: ReturnType<typeof setTimeout> | null = null;
+  function onEditorScroll() {
+    if (scrollSaveTimeout) clearTimeout(scrollSaveTimeout);
+    scrollSaveTimeout = setTimeout(saveReadingPosition, 500);
+  }
+
   // Each resizable panel tracks its own width
   let loreWidth = $state(400);
   let chatWidth = $state(400);
@@ -135,11 +162,24 @@
   async function loadChapterContent() {
     if (!slug) return;
 
-    if (activeChapterId) {
+    const saved = restoreReadingPosition();
+
+    // Try saved chapter first, then activeChapterId, then first chapter
+    const tryChapterId = saved?.chapterId ?? activeChapterId;
+
+    if (tryChapterId) {
       try {
-        const chapter = await api.getChapter(slug, activeChapterId);
+        const chapter = await api.getChapter(slug, tryChapterId);
         if (chapter) {
+          activeChapterId = tryChapterId;
           content = chapter.content;
+          // Restore scroll after render
+          if (saved?.scrollTop) {
+            setTimeout(() => {
+              const wrapper = document.querySelector('.editor-pane .milkdown-wrapper') as HTMLDivElement | null;
+              if (wrapper) wrapper.scrollTop = saved.scrollTop;
+            }, 100);
+          }
           return;
         }
       } catch { /* chapter not found */ }
@@ -202,6 +242,8 @@
   }
 
   async function handleChapterSelect(id: string) {
+    // Save scroll position of current chapter before switching
+    saveReadingPosition();
     // Cancel any pending save so it doesn't overwrite the target chapter
     if (saveTimeout) { clearTimeout(saveTimeout); saveTimeout = null; }
     // Clean up any active diff when switching chapters
@@ -391,6 +433,7 @@
                 readonly={!isEditing}
                 onContentChange={(md) => { if (isEditing) debouncedSave(md); }}
                 onTextSelect={handleTextSelect}
+                onScroll={onEditorScroll}
               />
             {/key}
           {:else}
@@ -477,6 +520,7 @@
                   readonly={!isEditing}
                   onContentChange={(md) => { if (isEditing) debouncedSave(md); }}
                   onTextSelect={handleTextSelect}
+                  onScroll={onEditorScroll}
                 />
               {/key}
             {/if}
