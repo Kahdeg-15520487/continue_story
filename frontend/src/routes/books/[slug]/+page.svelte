@@ -174,7 +174,7 @@
           activeChapterId = tryChapterId;
           content = chapter.content;
 
-          // Check for pending scratch file (agent may have edited while page was closed)
+          // Check for pending scratch file
           try {
             const scratch = await api.getScratchContent(slug, tryChapterId);
             if (scratch?.content) {
@@ -323,11 +323,8 @@
   }
 
   async function handleChatEditDone(chapterId: string) {
-    // If a diff is already showing, reject it first
-    if (diffState && activeChapterId) {
-      try { await api.rejectInlineEdit(slug, activeChapterId); } catch { /* ignore */ }
-      diffState = null;
-    }
+    // Clear old diff UI but do NOT delete the scratch file
+    diffState = null;
 
     if (chapterId !== activeChapterId) {
       await handleChapterSelect(chapterId);
