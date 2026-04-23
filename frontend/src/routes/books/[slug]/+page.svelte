@@ -273,6 +273,9 @@
             diffState = { original: chapter.content, scratch: scratch.content };
           }
         } catch { /* no scratch file */ }
+
+        // Save position immediately after switching so reload lands on the new chapter
+        saveReadingPosition();
       }
     } catch { /* ignore */ }
   }
