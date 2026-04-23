@@ -1,4 +1,4 @@
-import type { BookSummary, BookDetail, BookContent, CreateBookRequest, LoreFiles, LoreContent, UploadResult, ConversionStatus, ChatHistoryMessage } from './types';
+import type { BookSummary, BookDetail, BookContent, CreateBookRequest, WikiIndex, UploadResult, ConversionStatus, ChatHistoryMessage } from './types';
 
 const BASE = '/api';
 
@@ -45,10 +45,16 @@ export const api = {
       method: 'POST',
     }),
 
-  // Lore
-  getLoreFiles: (slug: string) => request<LoreFiles>(`/books/${slug}/lore`),
-  getLoreContent: (slug: string, file: string) =>
-    request<LoreContent>(`/books/${slug}/lore/${encodeURIComponent(file)}`),
+  // Lore / Wiki
+  getWikiIndex: (slug: string) =>
+    request<WikiIndex>(`/books/${slug}/lore`),
+
+  getWikiEntity: (slug: string, category: string, entity: string) =>
+    request<{ file: string; content: string }>(`/books/${slug}/lore/${category}/${encodeURIComponent(entity)}`),
+
+  getWikiSummary: (slug: string) =>
+    request<{ file: string; content: string }>(`/books/${slug}/lore/summary`),
+
   triggerLoreGeneration: (slug: string) =>
     request<{ jobId: string; status: string }>(`/books/${slug}/lore`, {
       method: 'POST',

@@ -1,6 +1,6 @@
 ---
 name: lore-extraction
-description: Extracts structured lore data (characters, locations, themes, plot summary) from markdown book files. Use when asked to analyze a book's content and generate wiki-style reference pages.
+description: Extracts structured lore data (characters, locations) from markdown book files. Each entity gets its own file in the wiki directory.
 ---
 
 # Lore Extraction Skill
@@ -10,29 +10,20 @@ You are a literary analysis assistant. Your task is to read a book's markdown fi
 ## Workflow
 
 1. **Read the book file** at the path given in the prompt (e.g., `book.md`)
-2. **Create the `wiki/` directory** if it does not already exist
+2. **Create directories** `wiki/characters/` and `wiki/locations/` if they don't exist
 3. **Analyze the content** and extract:
    - Characters: name, role, description, relationships
    - Locations: name, description, plot significance
-   - Themes: major themes with evidence from the text
-   - Summary: concise plot summary covering beginning, middle, and end
-4. **Write four wiki files** to the `wiki/` directory:
-   - `wiki/characters.md`
-   - `wiki/locations.md`
-   - `wiki/themes.md`
-   - `wiki/summary.md`
-5. **Overwrite** any existing wiki files with fresh analysis
+4. **Write one file per entity** into the appropriate directory
+5. **Write a summary file** at `wiki/summary.md`
+6. **Overwrite** any existing wiki files with fresh analysis
 
 ## Output Formats
 
-### wiki/characters.md
+### wiki/characters/{slugified-name}.md
 
 ```markdown
-# Characters
-
-> Auto-generated lore extraction
-
-## [Character Name]
+# [Character Name]
 
 **Role:** Protagonist / Antagonist / Supporting / Minor
 
@@ -42,42 +33,20 @@ You are a literary analysis assistant. Your task is to read a book's markdown fi
 - Related to [Other Character] — [relationship type]
 ```
 
-### wiki/locations.md
+### wiki/locations/{slugified-name}.md
 
 ```markdown
-# Locations
-
-> Auto-generated lore extraction
-
-## [Location Name]
+# [Location Name]
 
 **Description:** 2-3 sentence description of the location.
 
 **Significance:** Why this location matters to the plot.
 ```
 
-### wiki/themes.md
-
-```markdown
-# Themes
-
-> Auto-generated lore extraction
-
-## [Theme Name]
-
-**Description:** What this theme explores.
-
-**Evidence:**
-- [Specific example from the text]
-- [Another example]
-```
-
 ### wiki/summary.md
 
 ```markdown
 # Plot Summary
-
-> Auto-generated lore extraction
 
 ## Overview
 
@@ -99,8 +68,9 @@ You are a literary analysis assistant. Your task is to read a book's markdown fi
 ## Rules
 
 - Only extract information **explicitly present** in the text — do not invent or infer beyond what is written
+- Each entity gets its own file — do NOT combine multiple entities into one file
+- Filename = slugified version of the entity name (lowercase, spaces → hyphens, special chars removed)
 - For very long books, prioritize main characters and pivotal locations
-- For very short books (under 500 words), combine characters into a single list with brief entries
 - Use proper markdown formatting throughout
-- Each file MUST start with a top-level heading (`# Title`)
-- If the book has no identifiable characters or locations (e.g., a technical document), write "No [characters/locations] identified — this appears to be a non-fiction or technical work" in the relevant file
+- Each file MUST start with a top-level heading (`# Entity Name`)
+- If the book has no identifiable characters or locations, create a file `wiki/characters/none.md` or `wiki/locations/none.md` explaining why

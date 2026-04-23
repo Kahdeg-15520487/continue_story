@@ -38,13 +38,21 @@ export interface ChatRequest {
   message: string;
 }
 
-export interface LoreFiles {
-  files: string[];
+export interface WikiEntity {
+  id: string;
+  name: string;
+  file: string;
 }
 
-export interface LoreContent {
-  file: string;
-  content: string;
+export interface WikiCategory {
+  name: string;
+  label: string;
+  entities: WikiEntity[];
+}
+
+export interface WikiIndex {
+  categories: WikiCategory[];
+  hasSummary: boolean;
 }
 
 export interface UploadResult {

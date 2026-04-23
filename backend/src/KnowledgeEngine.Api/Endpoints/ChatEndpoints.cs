@@ -1,6 +1,5 @@
 using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using KnowledgeEngine.Api.Data;
 using KnowledgeEngine.Api.Models;
 using KnowledgeEngine.Api.Services;
@@ -106,15 +105,32 @@ public static class ChatEndpoints
                 }
             }
 
-            // Wiki files
+            // Wiki entities (per-entity files from subdirectories)
             if (Directory.Exists(wikiDir))
             {
-                foreach (var wikiFile in Directory.GetFiles(wikiDir, "*.md").OrderBy(f => f))
+                // Read summary.md if it exists
+                var summaryFile = Path.Combine(wikiDir, "summary.md");
+                if (File.Exists(summaryFile))
                 {
-                    var wikiContent = await File.ReadAllTextAsync(wikiFile, ct);
-                    if (wikiContent.Length > 10_000)
-                        wikiContent = wikiContent[..10_000] + "\n\n[... truncated ...]";
-                    contextParts.Add($"# Wiki: {Path.GetFileName(wikiFile)}\n\n{wikiContent}");
+                    var summaryContent = await File.ReadAllTextAsync(summaryFile, ct);
+                    if (summaryContent.Length > 10_000)
+                        summaryContent = summaryContent[..10_000] + "\n\n[... truncated ...]";
+                    contextParts.Add($"# Plot Summary\n\n{summaryContent}");
+                }
+
+                // Read entity files from subdirectories
+                foreach (var catDir in Directory.GetDirectories(wikiDir).OrderBy(d => d))
+                {
+                    var catName = Path.GetFileName(catDir);
+                    foreach (var entityFile in Directory.GetFiles(catDir, "*.md").OrderBy(f => f))
+                    {
+                        var entityContent = await File.ReadAllTextAsync(entityFile, ct);
+                        if (entityContent.Length > 5_000)
+                            entityContent = entityContent[..5_000] + "\n[... truncated ...]";
+                        var entityName = entityContent.Split('\n').FirstOrDefault(l => l.StartsWith("# "))?.Substring(2).Trim()
+                            ?? Path.GetFileNameWithoutExtension(entityFile);
+                        contextParts.Add($"# Wiki/{catName}: {entityName}\n\n{entityContent}");
+                    }
                 }
             }
 
@@ -134,12 +150,12 @@ public static class ChatEndpoints
             {
                 try
                 {
-                    var charsFile = Path.Combine(wikiDir, "characters.md");
-                    if (File.Exists(charsFile))
-                        characterCount = Regex.Count(await File.ReadAllTextAsync(charsFile, ct), @"^##\s", RegexOptions.Multiline);
-                    var locsFile = Path.Combine(wikiDir, "locations.md");
-                    if (File.Exists(locsFile))
-                        locationCount = Regex.Count(await File.ReadAllTextAsync(locsFile, ct), @"^##\s", RegexOptions.Multiline);
+                    var charsDir = Path.Combine(wikiDir, "characters");
+                    if (Directory.Exists(charsDir))
+                        characterCount = Directory.GetFiles(charsDir, "*.md").Length;
+                    var locsDir = Path.Combine(wikiDir, "locations");
+                    if (Directory.Exists(locsDir))
+                        locationCount = Directory.GetFiles(locsDir, "*.md").Length;
                 }
                 catch { }
             }

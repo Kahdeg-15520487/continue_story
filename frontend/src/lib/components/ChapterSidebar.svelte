@@ -15,6 +15,7 @@
   let collapsed = $state(false);
   let showMenu = $state(false);
   let regenerating = $state(false);
+  let generatingWiki = $state(false);
 
   async function loadChapters() {
     try {
@@ -65,12 +66,24 @@
     showMenu = false;
     try {
       await api.regenerateTitles(slug);
-      // Give the job a moment to run, then refresh
       setTimeout(() => { loadChapters(); }, 3000);
     } catch (err) {
       console.error('Failed to regenerate titles:', err);
     } finally {
       regenerating = false;
+    }
+  }
+
+  async function generateWiki() {
+    if (generatingWiki) return;
+    generatingWiki = true;
+    showMenu = false;
+    try {
+      await api.triggerLoreGeneration(slug);
+    } catch (err) {
+      console.error('Failed to generate wiki:', err);
+    } finally {
+      generatingWiki = false;
     }
   }
 
@@ -101,6 +114,9 @@
           <div class="menu-dropdown" class:regenerating>
             <button class="menu-item" onclick={regenerateTitles} disabled={regenerating}>
               {regenerating ? 'Regenerating...' : 'Regenerate Titles'}
+            </button>
+            <button class="menu-item" onclick={generateWiki} disabled={generatingWiki}>
+              {generatingWiki ? 'Generating...' : 'Generate Wiki'}
             </button>
           </div>
         {/if}
