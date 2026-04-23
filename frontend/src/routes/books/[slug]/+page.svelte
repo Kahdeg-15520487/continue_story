@@ -256,11 +256,8 @@
     saveReadingPosition();
     // Cancel any pending save so it doesn't overwrite the target chapter
     if (saveTimeout) { clearTimeout(saveTimeout); saveTimeout = null; }
-    // Clean up any active diff when switching chapters
-    if (diffState && activeChapterId) {
-      try { await api.rejectInlineEdit(slug, activeChapterId); } catch { /* ignore */ }
-      diffState = null;
-    }
+    // Dismiss diff UI but keep scratch file on disk (user must explicitly reject)
+    diffState = null;
     showInlineEdit = false;
     if (!slug) return;
     try {
@@ -268,6 +265,14 @@
       if (chapter) {
         content = chapter.content;
         activeChapterId = id;
+
+        // Check for pending scratch file
+        try {
+          const scratch = await api.getScratchContent(slug, id);
+          if (scratch?.content) {
+            diffState = { original: chapter.content, scratch: scratch.content };
+          }
+        } catch { /* no scratch file */ }
       }
     } catch { /* ignore */ }
   }
