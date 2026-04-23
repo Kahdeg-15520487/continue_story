@@ -14,7 +14,7 @@ import {
 const PORT = parseInt(process.env.PORT || "3001");
 const MAX_SESSIONS = parseInt(process.env.MAX_SESSIONS || "10");
 const SESSION_IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 min idle → dispose
-const SESSION_MAX_LIFETIME_MS = 30 * 60 * 1000; // 30 min hard limit
+const SESSION_MAX_LIFETIME_MS = 60 * 60 * 1000; // 60 min hard limit
 const COMPACT_THRESHOLD_TOKENS = 100_000; // auto-compact at ~100k tokens
 
 interface ManagedSession {
@@ -210,6 +210,14 @@ function handleSessionEvent(session: ManagedSession, event: AgentSessionEvent) {
   }
 
   resetIdleTimer(session);
+}
+
+function resetLifetime(managed: ManagedSession) {
+  clearTimeout(managed.maxLifetimeTimer);
+  managed.maxLifetimeTimer = setTimeout(
+    () => disposeSession(managed.id, "max lifetime"),
+    SESSION_MAX_LIFETIME_MS,
+  );
 }
 
 function disposeSession(id: string, reason: string) {
@@ -427,6 +435,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       managed.responseText = "";
       managed.responseReject = null;
 
+      resetLifetime(managed);
       await managed.session.prompt(message);
 
       const result = managed.responseText;
@@ -484,6 +493,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
             console.log(`[session:${shortId(managed.id)}] compacted, continuing task`);
             // Send continuation prompt
             try {
+              resetLifetime(managed);
               await managed.session.prompt("Review what you've done so far. If there are any remaining changes to complete the user's original request, continue. If everything is done, summarize what was changed.");
             } catch (err: any) {
               console.error(`[session:${shortId(managed.id)}] continuation failed: ${err.message}`);
@@ -518,6 +528,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
 
     // Send the prompt
     try {
+      resetLifetime(managed);
       await managed.session.prompt(message);
     } catch (err: any) {
       res.write(`data: ${JSON.stringify({ type: "error", message: err.message })}\n\n`);
