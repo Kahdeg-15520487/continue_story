@@ -18,11 +18,15 @@ public static class EditorEndpoints
 
             var libraryPath = config.GetValue<string>("Library:Path") ?? "/library";
             var bookMd = Path.Combine(libraryPath, slug, "book.md");
+            var bookOrg = Path.Combine(libraryPath, slug, "book.org.md");
 
-            if (!File.Exists(bookMd))
+            // Prefer book.md (pre-split), fallback to book.org.md (post-split archive)
+            var filePath = File.Exists(bookMd) ? bookMd : bookOrg;
+
+            if (!File.Exists(filePath))
                 return Results.NotFound(new { error = "Book content not found. Has it been converted?" });
 
-            var content = await File.ReadAllTextAsync(bookMd);
+            var content = await File.ReadAllTextAsync(filePath);
             return Results.Ok(new { slug, content });
         });
 
@@ -35,8 +39,9 @@ public static class EditorEndpoints
             var libraryPath = config.GetValue<string>("Library:Path") ?? "/library";
             var bookMd = Path.Combine(libraryPath, slug, "book.md");
 
+            // Only allow editing book.md before it's been split
             if (!File.Exists(bookMd))
-                return Results.NotFound(new { error = "Book content not found" });
+                return Results.BadRequest(new { error = "Cannot edit: book has already been split into chapters" });
 
             await File.WriteAllTextAsync(bookMd, req.Content);
             return Results.Ok(new { slug, saved = true });

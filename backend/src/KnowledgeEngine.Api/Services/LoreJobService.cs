@@ -32,7 +32,7 @@ public class LoreJobService
         _logger.LogInformation("Generating lore for book: Slug={Slug}", slug);
 
         var libraryPath = _config.GetValue<string>("Library:Path") ?? "/library";
-        var bookMd = Path.Combine(libraryPath, slug, "book.md");
+        var bookMd = Path.Combine(libraryPath, slug, "book.org.md");
         var wikiDir = Path.Combine(libraryPath, slug, "wiki");
 
         var book = await db.Books.FirstOrDefaultAsync(b => b.Slug == slug);
@@ -56,7 +56,7 @@ public class LoreJobService
             book.ErrorMessage = "Cannot generate lore: book has no content";
             book.UpdatedAt = DateTime.UtcNow;
             await db.SaveChangesAsync();
-            _logger.LogError("Lore generation skipped: no book.md for {Slug}", slug);
+            _logger.LogError("Lore generation skipped: no book.org.md for {Slug}", slug);
             return;
         }
 
@@ -69,7 +69,7 @@ public class LoreJobService
         book.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
 
-        var prompt = $"Read the book at book.md (read-only original source) and extract lore using the lore-extraction skill. " +
+        var prompt = $"Read the book at book.org.md (the immutable original source — do NOT modify it) and extract lore using the lore-extraction skill. " +
             $"Create individual entity files in wiki/characters/ and wiki/locations/ directories (one file per entity). " +
             $"Also create wiki/summary.md for the plot summary. " +
             $"Follow the skill's output format exactly. " +

@@ -63,9 +63,10 @@ public static class ConversionEndpoints
 
             var libraryPath = config.GetValue<string>("Library:Path") ?? "/library";
             var bookMd = Path.Combine(libraryPath, slug, "book.md");
+            var bookOrg = Path.Combine(libraryPath, slug, "book.org.md");
 
-            if (!File.Exists(bookMd))
-                return Results.BadRequest(new { error = "No book.md found" });
+            if (!File.Exists(bookMd) && !File.Exists(bookOrg))
+                return Results.BadRequest(new { error = "No book content found" });
 
             book.Status = "splitting";
             book.ErrorMessage = null;

@@ -118,12 +118,13 @@ public class ChapterSplitService
             // Step 6: Generate chapter titles via LLM
             await GenerateChapterTitlesAsync(slug);
 
-            // Step 7: Mark book.md as read-only (immutable source)
+            // Step 7: Archive book.md as book.org.md (immutable original)
             if (File.Exists(bookMd))
             {
-                var attr = File.GetAttributes(bookMd);
-                File.SetAttributes(bookMd, attr | FileAttributes.ReadOnly);
-                _logger.LogInformation("Marked book.md as read-only for {Slug}", slug);
+                var orgPath = Path.Combine(libraryPath, slug, "book.org.md");
+                if (File.Exists(orgPath)) File.Delete(orgPath);
+                File.Move(bookMd, orgPath);
+                _logger.LogInformation("Archived book.md → book.org.md for {Slug}", slug);
             }
 
             // Step 8: Enqueue lore generation
