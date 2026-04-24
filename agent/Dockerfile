@@ -5,10 +5,14 @@ COPY package.json ./
 RUN npm install
 COPY src/ ./src/
 
-# Run as non-root user
-RUN addgroup -S piagent && adduser -S piagent -G piagent
-RUN mkdir -p /home/piagent/.pi/agent && chown -R piagent:piagent /home/piagent/.pi
-USER piagent
+# Create non-root user
+RUN addgroup -S piagent && adduser -S piagent -G piagent \
+    && mkdir -p /home/piagent/.pi/agent && chown -R piagent:piagent /home/piagent/.pi
 
-EXPOSE 3001
+# Entrypoint fixes /library ownership then drops to piagent
+RUN apk add --no-cache su-exec
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["npx", "tsx", "src/index.ts"]
