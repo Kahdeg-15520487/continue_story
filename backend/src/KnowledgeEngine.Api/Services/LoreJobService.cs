@@ -69,7 +69,7 @@ public class LoreJobService
         book.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
 
-        var prompt = $"Read the book at book.md and extract lore using the lore-extraction skill. " +
+        var prompt = $"Read the book at book.md (read-only original source) and extract lore using the lore-extraction skill. " +
             $"Create individual entity files in wiki/characters/ and wiki/locations/ directories (one file per entity). " +
             $"Also create wiki/summary.md for the plot summary. " +
             $"Follow the skill's output format exactly. " +

@@ -112,10 +112,21 @@ public class ChapterSplitService
             var finalCount = Directory.GetFiles(chaptersDir, "ch-*.md").Where(f => !f.EndsWith(".scratch.md")).Count();
             _logger.LogInformation("Split {Slug} into {Count} chapters", slug, finalCount);
 
-            // Step 5: Generate chapter titles via LLM
+            // Step 5: Reformat chapters to clean markdown
+            await ReformatChaptersAsync(slug);
+
+            // Step 6: Generate chapter titles via LLM
             await GenerateChapterTitlesAsync(slug);
 
-            // Step 6: Enqueue lore generation
+            // Step 7: Mark book.md as read-only (immutable source)
+            if (File.Exists(bookMd))
+            {
+                var attr = File.GetAttributes(bookMd);
+                File.SetAttributes(bookMd, attr | FileAttributes.ReadOnly);
+                _logger.LogInformation("Marked book.md as read-only for {Slug}", slug);
+            }
+
+            // Step 8: Enqueue lore generation
             var jobClient = scope.ServiceProvider.GetRequiredService<IBackgroundJobClient>();
             jobClient.Enqueue<LoreJobService>(x => x.GenerateLoreAsync(slug));
             _logger.LogInformation("Lore generation enqueued for {Slug}", slug);
@@ -448,6 +459,97 @@ public class ChapterSplitService
         {
             try { await agentService.KillSessionAsync(sessionId); } catch { }
         }
+    }
+
+    /// <summary>
+    /// Reformat each chapter to clean markdown: fix line endings, merge broken
+    /// paragraphs, clean up dialogue, remove metadata headers, etc.
+    /// Uses a fresh session per chapter to avoid compaction issues.
+    /// </summary>
+    public async Task ReformatChaptersAsync(string slug)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var agentService = scope.ServiceProvider.GetRequiredService<IAgentService>();
+
+        var libraryPath = _config.GetValue<string>("Library:Path") ?? "/library";
+        var chaptersDir = Path.Combine(libraryPath, slug, "chapters");
+
+        if (!Directory.Exists(chaptersDir))
+        {
+            _logger.LogWarning("No chapters directory for {Slug}", slug);
+            return;
+        }
+
+        var chapterFiles = Directory.GetFiles(chaptersDir, "*.md")
+            .Where(f => !f.EndsWith(".scratch.md"))
+            .OrderBy(f => f)
+            .ToArray();
+
+        if (chapterFiles.Length == 0) return;
+
+        _logger.LogInformation("Reformatting {Count} chapters for {Slug}", chapterFiles.Length, slug);
+
+        var systemPrompt = new StringBuilder()
+            .AppendLine("You are a markdown formatting assistant. You receive a chapter of a story.")
+            .AppendLine("Reformat it to clean markdown following these rules:")
+            .AppendLine()
+            .AppendLine("1. **Paragraphs**: Separate paragraphs with exactly one blank line. Merge hard-wrapped lines that belong to the same paragraph into a single paragraph.")
+            .AppendLine("2. **Dialogue**: Each character's speech gets its own paragraph, wrapped in quotation marks. If dialogue is split across multiple lines, merge it into one line.")
+            .AppendLine("   Example: `\"Hello,\" she said.` stays as one paragraph.")
+            .AppendLine("3. **Scene breaks**: Use `---` (thematic break) for scene transitions. Replace `***` or blank lines with stars with `---`.")
+            .AppendLine("4. **Emphasis**: Preserve existing `*italic*` and `**bold**`. Fix broken emphasis markers.")
+            .AppendLine("5. **Metadata headers**: Remove any book metadata (Title:, Author:, Tags:, Description:, Novel ID:, etc.) from the beginning of chapters. The story text starts after the `# Chapter Title` heading.")
+            .AppendLine("6. **No content changes**: Do NOT rewrite, summarize, or change any story text. Only fix formatting.")
+            .AppendLine("7. **Output**: Return ONLY the reformatted chapter text. No explanation, no markdown code fences.")
+            .ToString();
+
+        foreach (var chapterFile in chapterFiles)
+        {
+            var chapterContent = await File.ReadAllTextAsync(chapterFile);
+            var chapterName = Path.GetFileName(chapterFile);
+
+            // Fresh session per chapter to avoid compaction issues
+            var sessionId = await agentService.CreateNewSessionAsync(slug);
+
+            try
+            {
+                await agentService.SendPromptAsync(sessionId, systemPrompt);
+                var reformatPrompt = $"Here is the chapter to reformat:\n\n{chapterContent}";
+                var result = await agentService.SendPromptAsync(sessionId, reformatPrompt);
+
+                if (!string.IsNullOrWhiteSpace(result))
+                {
+                    // Strip markdown code fences if the LLM wrapped the output
+                    var cleaned = result.Trim();
+                    if (cleaned.StartsWith("```markdown"))
+                        cleaned = cleaned["```markdown".Length..];
+                    else if (cleaned.StartsWith("```md"))
+                        cleaned = cleaned["```md".Length..];
+                    else if (cleaned.StartsWith("```"))
+                        cleaned = cleaned[3..];
+                    if (cleaned.EndsWith("```"))
+                        cleaned = cleaned[..^3];
+                    cleaned = cleaned.Trim();
+
+                    await File.WriteAllTextAsync(chapterFile, cleaned);
+                    _logger.LogInformation("Reformatted chapter {File}", chapterName);
+                }
+                else
+                {
+                    _logger.LogWarning("Reformat returned empty for {File}, keeping original", chapterName);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Reformat failed for {File}", chapterName);
+            }
+            finally
+            {
+                try { await agentService.KillSessionAsync(sessionId); } catch { }
+            }
+        }
+
+        _logger.LogInformation("Chapter reformatting complete for {Slug}", slug);
     }
 
     /// <summary>
