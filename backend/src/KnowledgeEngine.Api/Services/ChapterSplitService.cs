@@ -166,7 +166,7 @@ public class ChapterSplitService
     /// </summary>
     private async Task<string[]> DetectSeparatorsAsync(IAgentService agentService, string slug, string sample)
     {
-        var sessionId = await agentService.EnsureSessionAsync(slug);
+        var sessionId = await agentService.CreateNewSessionAsync(slug);
 
         try
         {
@@ -373,7 +373,7 @@ public class ChapterSplitService
             sb.AppendLine();
         }
 
-        var sessionId = await agentService.EnsureSessionAsync(slug);
+        var sessionId = await agentService.CreateNewSessionAsync(slug);
         try
         {
             _logger.LogInformation("Generating titles for {Count} chapters", chapterFiles.Length);
