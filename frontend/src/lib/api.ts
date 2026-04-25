@@ -31,6 +31,12 @@ export const api = {
       if (!r.ok) throw new Error('Delete failed');
     }),
 
+  updateBook: (slug: string, data: { title?: string; author?: string }) =>
+    request<BookDetail>(`/books/${slug}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
   // Editor
   getBookContent: (slug: string) => request<BookContent>(`/books/${slug}/content`),
   saveBookContent: (slug: string, content: string) =>

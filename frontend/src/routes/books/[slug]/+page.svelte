@@ -21,6 +21,10 @@
   let showChat = $state(false);
   let showLore = $state(false);
 
+  let editingTitle = $state(false);
+  let titleInput = $state('');
+  let titleSaving = $state(false);
+
   let selectedText = $state('');
   let selectionCoords = $state({ top: 0, left: 0 });
   let showInlineEdit = $state(false);
@@ -29,6 +33,29 @@
 
   let activeChapterId: string | null = $state(null);
   let chapterSidebar: ChapterSidebar | null = $state(null);
+
+  async function saveTitle() {
+    if (!book || !titleInput.trim() || titleInput.trim() === book.title) {
+      editingTitle = false;
+      return;
+    }
+    titleSaving = true;
+    try {
+      const updated = await api.updateBook(slug, { title: titleInput.trim() });
+      book = updated;
+    } catch (err) {
+      console.error('Failed to update title:', err);
+    } finally {
+      titleSaving = false;
+      editingTitle = false;
+    }
+  }
+
+  function startEditTitle() {
+    if (!book) return;
+    titleInput = book.title;
+    editingTitle = true;
+  }
 
   // Reading position persistence
   const STORAGE_KEY = `reading-pos-${slug}`;
@@ -382,7 +409,18 @@
   <div class="book-view">
     <div class="toolbar">
       <a href="/" class="back-link">← Library</a>
-      <h2 class="book-title">{book.title}</h2>
+      {#if editingTitle}
+        <input
+          class="title-input"
+          type="text"
+          bind:value={titleInput}
+          onblur={saveTitle}
+          onkeydown={(e) => { if (e.key === 'Enter') saveTitle(); if (e.key === 'Escape') editingTitle = false; }}
+          disabled={titleSaving}
+        />
+      {:else}
+        <h2 class="book-title editable" onclick={startEditTitle} title="Click to rename">{book.title}</h2>
+      {/if}
       <div class="toolbar-actions">
         <button class="btn" onclick={() => isEditing = !isEditing}>
           {isEditing ? '🔒 Lock' : '✏️ Edit'}
@@ -604,6 +642,29 @@
     font-size: 16px;
     font-weight: 600;
     flex: 1;
+  }
+
+  .book-title.editable {
+    cursor: pointer;
+    border-radius: 4px;
+    padding: 2px 6px;
+    margin: -2px -6px;
+  }
+
+  .book-title.editable:hover {
+    background: var(--bg-tertiary);
+  }
+
+  .title-input {
+    font-size: 16px;
+    font-weight: 600;
+    flex: 1;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    color: var(--text-primary);
+    padding: 2px 6px;
+    outline: none;
   }
 
   .toolbar-actions {

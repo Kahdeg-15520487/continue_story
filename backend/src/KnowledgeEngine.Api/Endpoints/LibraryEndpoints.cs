@@ -78,6 +78,19 @@ public static class LibraryEndpoints
 
             return Results.NoContent();
         });
+
+        group.MapPatch("/{slug}", async (string slug, UpdateBookRequest req, AppDbContext db) =>
+        {
+            var book = await db.Books.FirstOrDefaultAsync(b => b.Slug == slug);
+            if (book is null) return Results.NotFound();
+
+            if (req.Title is not null) book.Title = req.Title;
+            if (req.Author is not null) book.Author = req.Author;
+            book.UpdatedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+
+            return Results.Ok(new BookDetailDto(book));
+        });
     }
 
     private static string GenerateSlug(string title)
@@ -105,3 +118,4 @@ public record BookDetailDto(int Id, string Slug, string Title, string? Author, i
 }
 
 public record CreateBookRequest(string Title, string? Author, int? Year, string? SourceFile);
+public record UpdateBookRequest(string? Title, string? Author);
