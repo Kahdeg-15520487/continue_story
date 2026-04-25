@@ -60,7 +60,7 @@ public class ChapterService
         var dir = GetChaptersDir(slug);
         if (!Directory.Exists(dir)) return Task.FromResult(new List<ChapterInfo>());
 
-        var chapters = Directory.GetFiles(dir, "ch-*.md")
+        var chapters = Directory.GetFiles(dir, "*.md")
             .Where(f => !f.EndsWith(".scratch.md"))
             .OrderBy(f => f)
             .Select((f, i) =>
