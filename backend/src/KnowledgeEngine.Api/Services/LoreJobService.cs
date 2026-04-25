@@ -95,11 +95,12 @@ public class LoreJobService
 
             if (totalEntities == 0 && !hasSummary)
             {
-                book.Status = "error";
-                book.ErrorMessage = "Lore generation completed but no wiki files were created.";
+                // Don't error out — book works fine without lore, just mark ready
+                book.Status = "ready";
+                book.ErrorMessage = null;
                 book.UpdatedAt = DateTime.UtcNow;
                 await db.SaveChangesAsync();
-                _logger.LogError("Lore generation produced no files for {Slug}", slug);
+                _logger.LogWarning("Lore generation produced no files for {Slug}, marking as ready", slug);
                 return;
             }
 

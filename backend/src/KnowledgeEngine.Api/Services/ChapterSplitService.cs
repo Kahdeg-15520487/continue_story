@@ -44,6 +44,17 @@ public class ChapterSplitService
 
         if (!File.Exists(bookMd) || new FileInfo(bookMd).Length == 0)
         {
+            // Check if chapters already exist (book.md was already archived to book.org.md)
+            if (Directory.Exists(chaptersDir) && Directory.GetFiles(chaptersDir, "*.md").Length > 0)
+            {
+                _logger.LogInformation("Chapters already exist for {Slug}, marking as ready", slug);
+                book.Status = "ready";
+                book.ErrorMessage = null;
+                book.UpdatedAt = DateTime.UtcNow;
+                await db.SaveChangesAsync();
+                return;
+            }
+
             _logger.LogError("No book.md to split for {Slug}", slug);
             book.Status = "error";
             book.ErrorMessage = "Cannot split: no book content";
