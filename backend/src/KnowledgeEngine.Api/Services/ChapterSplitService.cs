@@ -112,8 +112,8 @@ public class ChapterSplitService
             var finalCount = Directory.GetFiles(chaptersDir, "ch-*.md").Where(f => !f.EndsWith(".scratch.md")).Count();
             _logger.LogInformation("Split {Slug} into {Count} chapters", slug, finalCount);
 
-            // Step 5: Reformat chapters to clean markdown
-            await ReformatChaptersAsync(slug);
+            // Step 5: Reformat chapters to clean markdown (disabled — too token-heavy)
+            // await ReformatChaptersAsync(slug);
 
             // Step 6: Generate chapter titles via LLM
             await GenerateChapterTitlesAsync(slug);
