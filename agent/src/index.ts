@@ -10,6 +10,7 @@ import {
   type AgentSession,
   type AgentSessionEvent,
 } from "@mariozechner/pi-coding-agent";
+import { webSearchTool, webFetchTool } from "./web-tools.js";
 
 const PORT = parseInt(process.env.PORT || "3001");
 const MAX_SESSIONS = parseInt(process.env.MAX_SESSIONS || "10");
@@ -64,6 +65,7 @@ async function createSession(bookSlug: string): Promise<ManagedSession> {
     tools,
     resourceLoader: loader,
     sessionManager: SessionManager.create(sessionDir),
+    customTools: [webSearchTool, webFetchTool],
   });
 
   const managed: ManagedSession = {
@@ -109,6 +111,7 @@ async function restoreSession(bookSlug: string): Promise<ManagedSession | null> 
       tools,
       resourceLoader: loader,
       sessionManager: SessionManager.continueRecent(sessionDir),
+      customTools: [webSearchTool, webFetchTool],
     });
 
     if (modelFallbackMessage) {
