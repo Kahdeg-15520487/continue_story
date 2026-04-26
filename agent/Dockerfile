@@ -5,10 +5,9 @@ COPY package.json ./
 RUN npm install
 COPY src/ ./src/
 
-# Create non-root user with uid 100 (same as api container)
-RUN addgroup -g 100 -S piagent && adduser -u 100 -S piagent -G piagent \
-    && mkdir -p /home/piagent/.pi/agent && chown -R piagent:piagent /home/piagent/.pi
+# Use existing 'node' user (uid 1000) — same as api container's appuser
+RUN mkdir -p /home/node/.pi/agent && chown -R node:node /home/node/.pi
 
-USER piagent
+USER node
 EXPOSE 3001
 CMD ["npx", "tsx", "src/index.ts"]

@@ -40,7 +40,7 @@ function shortId(id: string): string {
 }
 
 function getSessionDir(bookSlug: string): string {
-  return `/home/piagent/.pi-sessions/${bookSlug}`;
+  return `/home/node/.pi-sessions/${bookSlug}`;
 }
 
 async function createSession(bookSlug: string): Promise<ManagedSession> {

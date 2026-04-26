@@ -13,7 +13,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Create non-root user matching agent container (uid 100)
-RUN groupadd -g 100 appuser && useradd -u 100 -g appuser -m appuser
+RUN groupadd -g 1000 appuser && useradd -u 1000 -g appuser -m appuser
 
 WORKDIR /app
 COPY --from=build /app .

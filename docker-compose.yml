@@ -15,8 +15,9 @@ services:
       - AGENT_HOST=agent
       - AGENT_PORT=3001
     restart: unless-stopped
-    user: "100:100"
+    user: "1000:1000"
     depends_on:
+      agent:
         condition: service_started
 
   frontend:
@@ -45,7 +46,7 @@ services:
     volumes:
       - library-data:/library
       - ./skills:/skills:ro
-      - ./agent/models.json:/home/piagent/.pi/agent/models.json:ro
+      - ./agent/models.json:/home/node/.pi/agent/models.json:ro
     environment:
       - PI_CWD=/library
       - PORT=3001
