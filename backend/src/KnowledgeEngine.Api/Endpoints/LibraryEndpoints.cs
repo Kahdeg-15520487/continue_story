@@ -19,10 +19,25 @@ public static class LibraryEndpoints
             return Results.Ok(books);
         });
 
-        group.MapGet("/{slug}", async (string slug, AppDbContext db) =>
+        group.MapGet("/{slug}", async (string slug, AppDbContext db, IConfiguration config) =>
         {
             var book = await db.Books.FirstOrDefaultAsync(b => b.Slug == slug);
-            return book is null ? Results.NotFound() : Results.Ok(new BookDetailDto(book));
+            if (book is null) return Results.NotFound();
+
+            // Reconcile status with disk reality
+            var libraryPath = config.GetValue<string>("Library:Path") ?? "/library";
+            var chaptersDir = Path.Combine(libraryPath, slug, "chapters");
+            var hasChapters = Directory.Exists(chaptersDir) && Directory.GetFiles(chaptersDir, "*.md").Any(f => !f.EndsWith(".scratch.md"));
+
+            if (hasChapters && (book.Status == "pending" || book.Status == "error"))
+            {
+                book.Status = "ready";
+                book.ErrorMessage = null;
+                book.UpdatedAt = DateTime.UtcNow;
+                await db.SaveChangesAsync();
+            }
+
+            return Results.Ok(new BookDetailDto(book));
         });
 
         group.MapPost("/", async (CreateBookRequest req, AppDbContext db, IConfiguration config) =>
