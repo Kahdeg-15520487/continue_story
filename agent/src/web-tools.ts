@@ -1,29 +1,30 @@
+import http from "http";
+import https from "https";
 import { Type } from "@sinclair/typebox";
 import { defineTool } from "@mariozechner/pi-coding-agent";
 
-const SEARXNG_URL = process.env.SEARXNG_URL || "http://host.docker.internal:8888";
+const SEARXNG_URL = process.env.SEARXNG_URL || "http://searxng:8080";
 
 // ---------- shared HTTP helper ----------
 
 function fetchUrl(urlStr: string, timeout = 15000): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
-    const mod = urlStr.startsWith("https") ? require("https") : require("http");
-    const { URL } = require("url");
     const url = new URL(urlStr);
+    const mod = url.protocol === "https:" ? https : http;
     mod.get(
       url,
       { timeout, headers: { "User-Agent": "Mozilla/5.0 (compatible; StoryAgent/1.0)" } },
-      (res: any) => {
+      (res) => {
         // Follow redirects
-        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        if (res.statusCode! >= 300 && res.statusCode! < 400 && res.headers.location) {
           return fetchUrl(res.headers.location, timeout).then(resolve, reject);
         }
         const chunks: Buffer[] = [];
         res.on("data", (c: Buffer) => chunks.push(c));
-        res.on("end", () => resolve({ status: res.statusCode, body: Buffer.concat(chunks).toString("utf-8") }));
+        res.on("end", () => resolve({ status: res.statusCode!, body: Buffer.concat(chunks).toString("utf-8") }));
       },
     ).on("error", reject)
-      .on("timeout", function (this: any) { this.destroy(); reject(new Error("Request timed out")); });
+      .on("timeout", function (this: http.ClientRequest) { this.destroy(); reject(new Error("Request timed out")); });
   });
 }
 
