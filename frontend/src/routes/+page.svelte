@@ -77,6 +77,15 @@
     }
   }
 
+  async function createEmptyBook() {
+    try {
+      const book = await api.createBook({ title: 'Untitled' });
+      goto(`/books/${book.slug}`);
+    } catch (err: any) {
+      uploadError = err.message || 'Failed to create book';
+    }
+  }
+
   onMount(loadBooks);
 </script>
 
@@ -89,6 +98,7 @@
   <aside class="sidebar">
     <div class="sidebar-header">
       <h1>Library</h1>
+      <button class="new-book-btn" onclick={createEmptyBook}>+ Empty Book</button>
     </div>
 
     {#if loading}
@@ -154,11 +164,30 @@
   .sidebar-header {
     padding: 16px;
     border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
   }
 
   .sidebar-header h1 {
     font-size: 18px;
     font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .new-book-btn {
+    padding: 4px 12px;
+    font-size: 12px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: border-color 0.2s, color 0.2s;
+  }
+
+  .new-book-btn:hover {
+    border-color: var(--accent);
     color: var(--text-primary);
   }
 
