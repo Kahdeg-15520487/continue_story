@@ -37,7 +37,6 @@ public static class LibraryEndpoints
             var libraryPath = config.GetValue<string>("Library:Path") ?? "/library";
             var bookDir = Path.Combine(libraryPath, slug);
             Directory.CreateDirectory(bookDir);
-            try { System.Diagnostics.Process.Start("chmod", $"777 \"{bookDir}\"")?.WaitForExit(1000); } catch { }
 
             var book = new Book
             {

@@ -53,8 +53,6 @@ public static class UploadEndpoints
             var libraryPath = config.GetValue<string>("Library:Path") ?? "/library";
             var bookDir = Path.Combine(libraryPath, slug);
             Directory.CreateDirectory(bookDir);
-            // Make writable for agent container (piagent user)
-            try { System.Diagnostics.Process.Start("chmod", $"777 \"{bookDir}\"")?.WaitForExit(1000); } catch { }
 
             // Sanitize filename — keep only the filename, no path components
             var safeFileName = Path.GetFileName(file.FileName);

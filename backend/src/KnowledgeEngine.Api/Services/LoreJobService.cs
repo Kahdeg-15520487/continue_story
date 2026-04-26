@@ -62,7 +62,7 @@ public class LoreJobService
 
         // Create wiki subdirectories
         foreach (var cat in WikiCategories)
-            CreateWritableDirectory(Path.Combine(wikiDir, cat));
+            Directory.CreateDirectory(Path.Combine(wikiDir, cat));
 
         book.Status = "generating-lore";
         book.ErrorMessage = null;
@@ -122,19 +122,4 @@ public class LoreJobService
         }
     }
 
-    /// <summary>
-    /// Creates directory with 0777 permissions so the agent container (piagent user) can write to it.
-    /// </summary>
-    private static void CreateWritableDirectory(string path)
-    {
-        Directory.CreateDirectory(path);
-        try
-        {
-            System.Diagnostics.Process.Start("chmod", $"777 \"{path}\"")?.WaitForExit(1000);
-        }
-        catch
-        {
-            // Non-Unix or chmod not available — ignore
-        }
-    }
 }

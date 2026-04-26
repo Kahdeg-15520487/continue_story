@@ -15,8 +15,8 @@ services:
       - AGENT_HOST=agent
       - AGENT_PORT=3001
     restart: unless-stopped
+    user: "100:100"
     depends_on:
-      agent:
         condition: service_started
 
   frontend:

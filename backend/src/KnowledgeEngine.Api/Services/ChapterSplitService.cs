@@ -93,7 +93,7 @@ public class ChapterSplitService
             }
 
             // Step 4: Write chapter files
-            CreateWritableDirectory(chaptersDir);
+            Directory.CreateDirectory(chaptersDir);
             // Clear existing chapter files (but not scratch files)
             foreach (var existing in Directory.GetFiles(chaptersDir, "ch-*.md"))
             {
@@ -584,20 +584,4 @@ public class ChapterSplitService
     }
 
     private record ChapterTitle(int Index, string? Title);
-
-    /// <summary>
-    /// Creates directory with 0777 permissions so the agent container (piagent user) can write to it.
-    /// </summary>
-    private static void CreateWritableDirectory(string path)
-    {
-        Directory.CreateDirectory(path);
-        try
-        {
-            System.Diagnostics.Process.Start("chmod", $"777 \"{path}\"")?.WaitForExit(1000);
-        }
-        catch
-        {
-            // Non-Unix or chmod not available — ignore
-        }
-    }
 }

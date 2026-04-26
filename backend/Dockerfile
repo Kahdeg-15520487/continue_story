@@ -11,8 +11,17 @@ RUN apt-get update && \
     apt-get remove -y python3-pip && \
     apt-get autoremove -y && \
     rm -rf /var/lib/apt/lists/*
+
+# Create non-root user matching agent container (uid 100)
+RUN groupadd -g 100 appuser && useradd -u 100 -g appuser -m appuser
+
 WORKDIR /app
 COPY --from=build /app .
+
+# Ensure volumes are writable
+RUN mkdir -p /library /data && chown appuser:appuser /library /data
+
+USER appuser
 EXPOSE 5000
 ENV ASPNETCORE_URLS=http://+:5000
 ENTRYPOINT ["dotnet", "KnowledgeEngine.Api.dll"]
