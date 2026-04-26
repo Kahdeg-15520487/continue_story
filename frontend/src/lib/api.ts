@@ -85,6 +85,14 @@ export const api = {
       method: 'DELETE',
     }),
 
+  abortChat: (slug: string) =>
+    request<{ aborted: boolean; lastUserMessage?: string }>(`/books/${slug}/chat/abort`, {
+      method: 'POST',
+    }),
+
+  getLastUserMessage: (slug: string) =>
+    request<{ lastUserMessage: string }>(`/books/${slug}/chat/last-message`),
+
   // Chapters
   listChapters: (slug: string) =>
     request<Array<{ id: string; number: number; title: string; wordCount: number; fileName: string }>>(`/books/${slug}/chapters`),

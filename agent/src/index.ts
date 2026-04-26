@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "http";
-import { mkdirSync, readdirSync, statSync, unlinkSync, rmSync } from "fs";
+import { mkdirSync, readdirSync, statSync, unlinkSync, rmSync, readFileSync } from "fs";
 import { join } from "path";
 import {
   createAgentSession,
@@ -31,6 +31,8 @@ interface ManagedSession {
   responseReject: ((err: Error) => void) | null;
   responseText: string;
   tokenCount: number;
+  abortController: AbortController | null;
+  lastUserMessage: string;
 }
 
 const sessions = new Map<string, ManagedSession>();
@@ -81,6 +83,8 @@ async function createSession(bookSlug: string): Promise<ManagedSession> {
     responseReject: null,
     responseText: "",
     tokenCount: 0,
+    abortController: null,
+    lastUserMessage: "",
   };
 
   managed.unsubscribe = session.subscribe((event: AgentSessionEvent) => {
@@ -132,6 +136,8 @@ async function restoreSession(bookSlug: string): Promise<ManagedSession | null> 
       responseReject: null,
       responseText: "",
       tokenCount: 0,
+      abortController: null,
+      lastUserMessage: "",
     };
 
     managed.unsubscribe = session.subscribe((event: AgentSessionEvent) => {
@@ -412,6 +418,65 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
     return;
   }
 
+  // Abort a running prompt (keeps session alive)
+  const abortMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/abort$/);
+  if (abortMatch && req.method === "POST") {
+    const sessionId = abortMatch[1];
+    const managed = sessions.get(sessionId);
+    if (!managed) {
+      sendError(res, 404, "Session not found");
+      return;
+    }
+    // Dispose session but don't delete files — allows retry
+    console.log(`[session:${shortId(sessionId)}] aborted`);
+    managed.unsubscribe();
+    managed.session.dispose();
+    clearTimeout(managed.idleTimer);
+    clearTimeout(managed.maxLifetimeTimer);
+    if (managed.responseReject) {
+      managed.responseReject(new Error("Aborted by user"));
+      managed.responseReject = null;
+    }
+    sessions.delete(sessionId);
+    res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders() });
+    res.end(JSON.stringify({ aborted: true, lastUserMessage: managed.lastUserMessage }));
+    return;
+  }
+
+  // Retry: get the last user message for a book's most recent session
+  const retryMatch = url.pathname.match(/^\/api\/books\/([^/]+)\/last-message$/);
+  if (retryMatch && req.method === "GET") {
+    const bookSlug = retryMatch[1];
+    // Check if there's a disposed session with a saved last message
+    const sessionDir = getSessionDir(bookSlug);
+    try {
+      const files = readdirSync(sessionDir).filter(f => f.endsWith(".jsonl"));
+      if (files.length > 0) {
+        // Read last few lines to find last user message
+        const lastFile = files.sort().pop()!;
+        const content = readFileSync(join(sessionDir, lastFile), "utf-8");
+        const lines = content.trim().split("\n");
+        for (let i = lines.length - 1; i >= 0; i--) {
+          try {
+            const entry = JSON.parse(lines[i]);
+            if (entry.role === "user") {
+              const text = Array.isArray(entry.content)
+                ? entry.content.filter((c: any) => c.type === "text").map((c: any) => c.text).join("")
+                : entry.content;
+              if (text && text.trim()) {
+                res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders() });
+                res.end(JSON.stringify({ lastUserMessage: text }));
+                return;
+              }
+            }
+          } catch {}
+        }
+      }
+    } catch {}
+    sendError(res, 404, "No previous user message found");
+    return;
+  }
+
   // Delete a session
   const killMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)$/);
   if (killMatch && req.method === "DELETE") {
@@ -473,6 +538,8 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
 
     const { message } = JSON.parse(body);
     console.log(`[session:${shortId(managed.id)}] stream: "${message.slice(0, 80)}${message.length > 80 ? "..." : ""}" (${message.length} chars)`);
+    managed.lastUserMessage = message;
+    managed.abortController = new AbortController();
 
     res.writeHead(200, {
       "Content-Type": "text/event-stream",

@@ -370,5 +370,32 @@ public static class ChatEndpoints
             var sessions = await agentService.ListSessionsAsync(slug, ct);
             return Results.Ok(new { sessions });
         });
+
+        // Abort the current agent response
+        app.MapPost("/api/books/{slug}/chat/abort", async (
+            string slug,
+            IAgentService agentService,
+            CancellationToken ct) =>
+        {
+            var sessions = await agentService.ListSessionsAsync(slug, ct);
+            var active = sessions.FirstOrDefault();
+            if (active is null)
+                return Results.NotFound(new { error = "No active session" });
+
+            var lastMsg = await agentService.AbortSessionAsync(active.Id, ct);
+            return Results.Ok(new { aborted = true, lastUserMessage = lastMsg });
+        });
+
+        // Retry: get last user message from session history
+        app.MapGet("/api/books/{slug}/chat/last-message", async (
+            string slug,
+            IAgentService agentService,
+            CancellationToken ct) =>
+        {
+            var lastMsg = await agentService.GetLastUserMessageAsync(slug, ct);
+            return lastMsg is not null
+                ? Results.Ok(new { lastUserMessage = lastMsg })
+                : Results.NotFound(new { error = "No previous message" });
+        });
     }
 }

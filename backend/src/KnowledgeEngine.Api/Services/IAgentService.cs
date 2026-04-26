@@ -26,6 +26,16 @@ public interface IAgentService
     Task KillSessionAsync(string sessionId, CancellationToken ct = default);
 
     /// <summary>
+    /// Abort a running prompt, disposing the session.
+    /// </summary>
+    Task<string?> AbortSessionAsync(string sessionId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Get the last user message from a book's session history.
+    /// </summary>
+    Task<string?> GetLastUserMessageAsync(string bookSlug, CancellationToken ct = default);
+
+    /// <summary>
     /// Get session info (message count, token usage, etc).
     /// </summary>
     Task<SessionInfo> GetSessionInfoAsync(string sessionId, CancellationToken ct = default);

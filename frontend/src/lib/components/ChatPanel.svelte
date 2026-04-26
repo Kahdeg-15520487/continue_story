@@ -80,10 +80,67 @@
         streaming = false;
         onResponseDone?.();
       },
-      (err) => { chatError = err; },
+      (err) => { chatError = err; streaming = false; },
       (thinking) => { thinkingText += thinking; },
       { activeChapterId, sessionId: currentSessionId, onEditDone, onSessionInfo: (id) => { currentSessionId = id; } }
     );
+  }
+
+  async function stop() {
+    if (!streaming) return;
+    try {
+      const result = await api.abortChat(slug);
+      // Add whatever we had so far as a partial response
+      if (currentResponse) {
+        messages = [...messages, { role: 'assistant', text: currentResponse + '\n\n_[Stopped]_', thinking: thinkingText || undefined }];
+      }
+      currentResponse = '';
+      thinkingText = '';
+      streaming = false;
+      currentSessionId = null;
+    } catch (err: any) {
+      chatError = err.message || 'Failed to stop';
+      streaming = false;
+    }
+  }
+
+  async function retry() {
+    if (streaming) return;
+    chatError = '';
+    try {
+      const result = await api.getLastUserMessage(slug);
+      const msg = result.lastUserMessage;
+      if (!msg) { chatError = 'No previous message to retry'; return; }
+      // Remove the last assistant message if present
+      if (messages.length > 0 && messages[messages.length - 1].role === 'assistant') {
+        messages = messages.slice(0, -1);
+      }
+      // Re-send
+      messages = [...messages, { role: 'user', text: msg }];
+      streaming = true;
+      currentResponse = '';
+      thinkingText = '';
+      currentSessionId = null;
+      api.chat(
+        slug,
+        msg,
+        (chunk) => { currentResponse += chunk; },
+        () => {
+          if (currentResponse) {
+            messages = [...messages, { role: 'assistant', text: currentResponse, thinking: thinkingText || undefined }];
+          }
+          currentResponse = '';
+          thinkingText = '';
+          streaming = false;
+          onResponseDone?.();
+        },
+        (err) => { chatError = err; streaming = false; },
+        (thinking) => { thinkingText += thinking; },
+        { activeChapterId, sessionId: null, onEditDone, onSessionInfo: (id) => { currentSessionId = id; } }
+      );
+    } catch (err: any) {
+      chatError = err.message || 'Failed to retry';
+    }
   }
 
   function handleKeydown(e: KeyboardEvent) {
@@ -181,9 +238,16 @@
       onkeydown={handleKeydown}
       rows="2"
     ></textarea>
-    <button type="submit" class="btn" disabled={streaming || !input.trim()}>
-      Send
-    </button>
+    <div class="input-actions">
+      <button type="submit" class="btn" disabled={streaming || !input.trim()}>
+        Send
+      </button>
+      {#if streaming}
+        <button type="button" class="btn btn-stop" onclick={stop}>⏹ Stop</button>
+      {:else if messages.length > 0}
+        <button type="button" class="btn btn-retry" onclick={retry}>↻ Retry</button>
+      {/if}
+    </div>
   </form>
 </div>
 
@@ -228,5 +292,10 @@
   .input-form { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border); }
   .input-form textarea { flex: 1; padding: 8px 12px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); font-size: 13px; resize: none; font-family: inherit; }
   .btn { padding: 6px 14px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-tertiary); color: var(--text-primary); cursor: pointer; font-size: 13px; }
+  .btn-stop { border-color: #da3633; color: #f97583; }
+  .btn-stop:hover { background: #3d1f1f; }
+  .btn-retry { color: var(--text-secondary); }
+  .btn-retry:hover { color: var(--accent); border-color: var(--accent); }
+  .input-actions { display: flex; gap: 6px; }
   .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>

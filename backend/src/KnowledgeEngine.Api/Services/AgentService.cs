@@ -103,6 +103,33 @@ public class AgentService : IAgentService
         catch { }
     }
 
+    public async Task<string?> AbortSessionAsync(string sessionId, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _http.PostAsync($"{_agentBaseUrl}/api/sessions/{sessionId}/abort",
+                new StringContent("{}", Encoding.UTF8, "application/json"), ct);
+            response.EnsureSuccessStatusCode();
+            var json = await response.Content.ReadAsStringAsync(ct);
+            var result = JsonSerializer.Deserialize<JsonElement>(json);
+            return result.TryGetProperty("lastUserMessage", out var msg) ? msg.GetString() : null;
+        }
+        catch { return null; }
+    }
+
+    public async Task<string?> GetLastUserMessageAsync(string bookSlug, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _http.GetAsync($"{_agentBaseUrl}/api/books/{bookSlug}/last-message", ct);
+            if (!response.IsSuccessStatusCode) return null;
+            var json = await response.Content.ReadAsStringAsync(ct);
+            var result = JsonSerializer.Deserialize<JsonElement>(json);
+            return result.TryGetProperty("lastUserMessage", out var msg) ? msg.GetString() : null;
+        }
+        catch { return null; }
+    }
+
     public async Task<SessionInfo> GetSessionInfoAsync(string sessionId, CancellationToken ct = default)
     {
         var response = await _http.GetAsync($"{_agentBaseUrl}/api/sessions/{sessionId}/info", ct);

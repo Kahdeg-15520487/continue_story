@@ -68,4 +68,15 @@ public class MockAgentService : IAgentService
     {
         return Task.CompletedTask;
     }
+
+    public Task<string?> AbortSessionAsync(string sessionId, CancellationToken ct = default)
+    {
+        KilledSessions.Add(sessionId);
+        return Task.FromResult<string?>(null);
+    }
+
+    public Task<string?> GetLastUserMessageAsync(string bookSlug, CancellationToken ct = default)
+    {
+        return Task.FromResult<string?>(null);
+    }
 }
