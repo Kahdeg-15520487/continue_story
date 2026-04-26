@@ -356,6 +356,9 @@
     // Clear old diff UI but do NOT delete the scratch file
     diffState = null;
 
+    // Refresh chapter list in case agent created new chapters
+    chapterSidebar?.refresh();
+
     if (chapterId !== activeChapterId) {
       await handleChapterSelect(chapterId);
     }
@@ -373,6 +376,11 @@
     } catch (err: any) {
       console.error('Failed to load chat edit diff:', err);
     }
+  }
+
+  function handleResponseDone() {
+    // Refresh chapter list after agent finishes — it may have created new chapters
+    chapterSidebar?.refresh();
   }
 
   async function handleRetry() {
@@ -598,7 +606,7 @@
       {#if showChat}
         <div class="resize-handle" role="separator" onmousedown={startResize('chat')}></div>
         <div class="side-panel" style="width: {chatWidth}px; min-width: {chatWidth}px;">
-          <ChatPanel {slug} {activeChapterId} onEditDone={handleChatEditDone} />
+          <ChatPanel {slug} {activeChapterId} onEditDone={handleChatEditDone} onResponseDone={handleResponseDone} />
         </div>
       {/if}
     </div>

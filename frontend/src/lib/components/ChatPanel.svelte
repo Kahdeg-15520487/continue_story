@@ -7,10 +7,12 @@
     slug,
     activeChapterId = null,
     onEditDone,
+    onResponseDone,
   }: {
     slug: string;
     activeChapterId?: string | null;
     onEditDone?: (chapterId: string) => void;
+    onResponseDone?: () => void;
   } = $props();
 
   let messages: Array<{ role: 'user' | 'assistant'; text: string; thinking?: string }> = $state([]);
@@ -76,6 +78,7 @@
         currentResponse = '';
         thinkingText = '';
         streaming = false;
+        onResponseDone?.();
       },
       (err) => { chatError = err; },
       (thinking) => { thinkingText += thinking; },
