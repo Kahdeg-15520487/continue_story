@@ -45,7 +45,7 @@ public static class LibraryEndpoints
                 Author = req.Author,
                 Year = req.Year,
                 SourceFile = req.SourceFile,
-                Status = "pending",
+                Status = req.SourceFile == null ? "ready" : "pending",
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
