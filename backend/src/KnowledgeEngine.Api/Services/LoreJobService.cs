@@ -50,13 +50,16 @@ public class LoreJobService
             return;
         }
 
-        if (!File.Exists(bookMd) || new FileInfo(bookMd).Length == 0)
+        var chaptersDir = Path.Combine(libraryPath, slug, "chapters");
+        var hasChapters = Directory.Exists(chaptersDir) && Directory.GetFiles(chaptersDir, "*.md").Length > 0;
+
+        if ((!File.Exists(bookMd) || new FileInfo(bookMd).Length == 0) && !hasChapters)
         {
             book.Status = "error";
             book.ErrorMessage = "Cannot generate lore: book has no content";
             book.UpdatedAt = DateTime.UtcNow;
             await db.SaveChangesAsync();
-            _logger.LogError("Lore generation skipped: no book.org.md for {Slug}", slug);
+            _logger.LogError("Lore generation skipped: no content for {Slug}", slug);
             return;
         }
 
@@ -69,7 +72,12 @@ public class LoreJobService
         book.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
 
-        var prompt = $"Read the book at book.org.md (the immutable original source — do NOT modify it) and extract lore using the lore-extraction skill. " +
+        var hasBookOrg = File.Exists(bookMd) && new FileInfo(bookMd).Length > 0;
+        var sourceRef = hasBookOrg
+            ? "Read the book at book.org.md (the immutable original source — do NOT modify it)"
+            : "Read the chapters in the chapters/ directory";
+
+        var prompt = $"{sourceRef} and extract lore using the lore-extraction skill. " +
             $"Create individual entity files in wiki/characters/ and wiki/locations/ directories (one file per entity). " +
             $"Also create wiki/summary.md for the plot summary. " +
             $"Follow the skill's output format exactly. " +
