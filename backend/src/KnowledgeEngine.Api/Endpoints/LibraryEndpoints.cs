@@ -29,7 +29,7 @@ public static class LibraryEndpoints
             var chaptersDir = Path.Combine(libraryPath, slug, "chapters");
             var hasChapters = Directory.Exists(chaptersDir) && Directory.GetFiles(chaptersDir, "*.md").Any(f => !f.EndsWith(".scratch.md"));
 
-            if (hasChapters && (book.Status == "pending" || book.Status == "error"))
+            if (hasChapters && book.Status != "ready")
             {
                 book.Status = "ready";
                 book.ErrorMessage = null;
@@ -48,6 +48,14 @@ public static class LibraryEndpoints
             var slug = GenerateSlug(req.Title);
             if (string.IsNullOrWhiteSpace(slug))
                 return Results.BadRequest(new { error = "Title produces an invalid slug" });
+
+            // De-duplicate slug if it already exists
+            var baseSlug = slug;
+            var counter = 2;
+            while (await db.Books.AnyAsync(b => b.Slug == slug))
+            {
+                slug = $"{baseSlug}-{counter++}";
+            }
 
             var libraryPath = config.GetValue<string>("Library:Path") ?? "/library";
             var bookDir = Path.Combine(libraryPath, slug);
