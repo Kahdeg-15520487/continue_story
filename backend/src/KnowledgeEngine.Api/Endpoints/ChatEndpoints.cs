@@ -1,3 +1,4 @@
+using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using KnowledgeEngine.Api.Data;
@@ -325,25 +326,38 @@ public static class ChatEndpoints
 
             // ── Stream response ────────────────────────────────────────────
             var assistantText = "";
-            await foreach (var evt in agentService.StreamPromptAsync(sessionId, req.Message, ct))
-            {
-                await response.WriteAsync($"data: {evt}\n\n", ct);
-                await response.Body.FlushAsync(ct);
+            var streamSessionId = sessionId;
 
-                try
+        streamRetry:
+            try
+            {
+                await foreach (var evt in agentService.StreamPromptAsync(streamSessionId, req.Message, ct))
                 {
-                    var parsed = JsonDocument.Parse(evt);
-                    if (parsed.RootElement.TryGetProperty("type", out var type) && type.GetString() == "message_update")
+                    await response.WriteAsync($"data: {evt}\n\n", ct);
+                    await response.Body.FlushAsync(ct);
+
+                    try
                     {
-                        if (parsed.RootElement.TryGetProperty("assistantMessageEvent", out var asm)
-                            && asm.TryGetProperty("type", out var asmType) && asmType.GetString() == "text_delta"
-                            && asm.TryGetProperty("delta", out var delta))
+                        var parsed = JsonDocument.Parse(evt);
+                        if (parsed.RootElement.TryGetProperty("type", out var type) && type.GetString() == "message_update")
                         {
-                            assistantText += delta.GetString() ?? "";
+                            if (parsed.RootElement.TryGetProperty("assistantMessageEvent", out var asm)
+                                && asm.TryGetProperty("type", out var asmType) && asmType.GetString() == "text_delta"
+                                && asm.TryGetProperty("delta", out var delta))
+                            {
+                                assistantText += delta.GetString() ?? "";
+                            }
                         }
                     }
+                    catch { }
                 }
-                catch { }
+            }
+            catch (HttpRequestException ex) when (ex.Message.Contains("404"))
+            {
+                // Session was lost (e.g. after abort/stop). Create a fresh one and retry.
+                streamSessionId = await agentService.EnsureSessionAsync(req.BookSlug, ct);
+                sessionId = streamSessionId;
+                goto streamRetry;
             }
 
             // ── Check for scratch files or direct edits ────────────────────
