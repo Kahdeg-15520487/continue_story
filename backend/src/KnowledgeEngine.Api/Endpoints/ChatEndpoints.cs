@@ -284,6 +284,21 @@ public static class ChatEndpoints
                         .ToString();
                     await agentService.SendPromptAsync(sessionId, contextPrompt, ct);
                 }
+                else
+                {
+                    // Session has history — still re-inject writing style reminder
+                    var writingReminder = new StringBuilder()
+                        .AppendLine("[SYSTEM REMINDER — always follow these writing rules for ALL responses]")
+                        .AppendLine("Write like a proper novel. Literary, immersive, natural sentence rhythm.")
+                        .AppendLine("- Eliminate: choppy subject-verb isolation, repetitive 'he said/she said', list-like sequencing, short choppy paragraphs, lack of sensory detail.")
+                        .AppendLine("- Apply: varied sentence structure, descriptive prose carrying action, action beats for dialogue, sensory grounding (light/sound/texture/smell), internal perspective, paragraph length variation, concrete details over abstractions, subordinate clauses.")
+                        .AppendLine("- Tone: dark and literary, precision over sensationalism, invisible narrator, no editorializing.")
+                        .AppendLine("- One action per sentence is a trap. Let sentences contain multiple actions, observations, and sensory details.")
+                        .AppendLine("- Concrete details over abstractions. Instead of 'she looked vulnerable', describe specific physical details.")
+                        .AppendLine("[/SYSTEM REMINDER]")
+                        .ToString();
+                    try { await agentService.SendPromptAsync(sessionId, writingReminder, ct); } catch { }
+                }
             }
             catch
             {
