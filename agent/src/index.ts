@@ -427,7 +427,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       sendError(res, 404, "Session not found");
       return;
     }
-    // Dispose session but don't delete files — allows retry
+    // Dispose session and delete files so restoreSession won't find a corrupted state
     console.log(`[session:${shortId(sessionId)}] aborted`);
     managed.unsubscribe();
     managed.session.dispose();
@@ -437,9 +437,19 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       managed.responseReject(new Error("Aborted by user"));
       managed.responseReject = null;
     }
+    // Save lastUserMessage before deleting files
+    const savedLastMessage = managed.lastUserMessage;
+    // Delete session files so restoreSession won't resurrect a mid-processing session
+    try {
+      const sessionDir = getSessionDir(managed.bookSlug);
+      rmSync(sessionDir, { recursive: true, force: true });
+      console.log(`[session:${shortId(sessionId)}] deleted session files`);
+    } catch (err: any) {
+      console.warn(`[session:${shortId(sessionId)}] failed to delete session files: ${err.message}`);
+    }
     sessions.delete(sessionId);
     res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders() });
-    res.end(JSON.stringify({ aborted: true, lastUserMessage: managed.lastUserMessage }));
+    res.end(JSON.stringify({ aborted: true, lastUserMessage: savedLastMessage }));
     return;
   }
 
