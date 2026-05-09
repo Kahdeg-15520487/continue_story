@@ -158,14 +158,17 @@
             <button class="kb-delete-btn" onclick={() => deleteCategory(cat.name)} title="Delete category">🗑</button>
           </div>
           {#each cat.entries as entry}
-            <button
+            <div
               class="kb-entry"
               class:active={selectedCategory === cat.name && selectedEntry === entry.file}
+              role="button"
+              tabindex="0"
               onclick={() => selectEntry(cat.name, entry.file)}
+              onkeydown={(e) => e.key === 'Enter' && selectEntry(cat.name, entry.file)}
             >
               <span>📄 {entry.title}</span>
-              <button class="kb-delete-btn" onclick|stopPropagation={() => deleteEntry(cat.name, entry.file)}>×</button>
-            </button>
+              <button class="kb-delete-btn" onclick={(e) => { e.stopPropagation(); deleteEntry(cat.name, entry.file); }}>×</button>
+            </div>
           {/each}
         </div>
       {/each}

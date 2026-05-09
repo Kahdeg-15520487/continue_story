@@ -100,6 +100,7 @@
       <h1>Library</h1>
       <button class="new-book-btn" onclick={createEmptyBook}>+ Empty Book</button>
     </div>
+    <a href="/knowledge" class="kb-link">🧠 Knowledge Base</a>
 
     {#if loading}
       <p class="loading">Loading...</p>
@@ -189,6 +190,21 @@
   .new-book-btn:hover {
     border-color: var(--accent);
     color: var(--text-primary);
+  }
+
+  .kb-link {
+    display: block;
+    padding: 10px 16px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 13px;
+    border-bottom: 1px solid var(--border);
+    transition: color 0.2s, background 0.2s;
+  }
+
+  .kb-link:hover {
+    color: var(--text-primary);
+    background: var(--bg-tertiary);
   }
 
   .loading {
