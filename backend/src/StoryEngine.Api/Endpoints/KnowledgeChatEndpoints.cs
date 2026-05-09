@@ -63,7 +63,7 @@ public static class KnowledgeChatEndpoints
 
             await foreach (var evt in agentService.StreamPromptAsync(sessionId, contextHint + message, ctx.RequestAborted))
             {
-                await ctx.Response.WriteAsync($"data: { JsonSerializer.Serialize(evt) }\n\n");
+                await ctx.Response.WriteAsync($"data: {evt}\n\n");
                 await ctx.Response.Body.FlushAsync();
             }
         });
