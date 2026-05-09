@@ -150,6 +150,8 @@ export const api = {
     onDone: () => void,
     onError?: (err: string) => void,
     onThinking?: (text: string) => void,
+    onToolStart?: (toolName: string, args: any) => void,
+    onToolEnd?: (toolName: string, result: any, isError: boolean) => void,
     options?: { activeChapterId?: string | null; sessionId?: string | null; onEditDone?: (chapterId: string) => void; onSessionInfo?: (sessionId: string) => void },
   ): AbortController {
     const controller = new AbortController();
@@ -204,6 +206,10 @@ export const api = {
                     } else if (delta?.type === 'thinking_delta') {
                       onThinking?.(delta.delta);
                     }
+                  } else if (evt.type === 'tool_execution_start') {
+                    onToolStart?.(evt.toolName, evt.args);
+                  } else if (evt.type === 'tool_execution_end') {
+                    onToolEnd?.(evt.toolName, evt.result, evt.isError);
                   } else if (evt.type === 'error') {
                     onError?.(evt.message || evt.error || 'Unknown error');
                   }
@@ -350,6 +356,8 @@ export const api = {
     onDone: () => void,
     onError?: (err: string) => void,
     onThinking?: (text: string) => void,
+    onToolStart?: (toolName: string, args: any) => void,
+    onToolEnd?: (toolName: string, result: any, isError: boolean) => void,
   ): AbortController {
     const controller = new AbortController();
     fetch(`${BASE}/knowledge/chat`, {
@@ -389,6 +397,10 @@ export const api = {
                     } else if (delta?.type === 'thinking_delta') {
                       onThinking?.(delta.delta);
                     }
+                  } else if (evt.type === 'tool_execution_start') {
+                    onToolStart?.(evt.toolName, evt.args);
+                  } else if (evt.type === 'tool_execution_end') {
+                    onToolEnd?.(evt.toolName, evt.result, evt.isError);
                   } else if (evt.type === 'error') {
                     onError?.(evt.message || evt.error || 'Unknown error');
                   }
