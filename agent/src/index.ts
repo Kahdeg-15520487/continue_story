@@ -7,6 +7,8 @@ import {
   DefaultResourceLoader,
   getAgentDir,
   SessionManager,
+  AuthStorage,
+  ModelRegistry,
   type AgentSession,
   type AgentSessionEvent,
 } from "@mariozechner/pi-coding-agent";
@@ -14,6 +16,18 @@ import { webSearchTool, webFetchTool } from "./web-tools.js";
 
 const PORT = parseInt(process.env.PORT || "3001");
 const MAX_SESSIONS = parseInt(process.env.MAX_SESSIONS || "10");
+
+// Resolve model from PI_MODEL env
+const PI_MODEL = process.env.PI_MODEL || "";
+const authStorage = AuthStorage.create();
+const modelRegistry = ModelRegistry.create(authStorage);
+let resolvedModel: any = undefined;
+if (PI_MODEL) {
+  const [provider, ...rest] = PI_MODEL.split("/");
+  const modelId = rest.join("/");
+  resolvedModel = modelRegistry.find(provider, modelId);
+  console.log(`[config] PI_MODEL=${PI_MODEL} resolved=${!!resolvedModel}`);
+}
 const SESSION_IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 min idle → dispose
 const SESSION_MAX_LIFETIME_MS = 60 * 60 * 1000; // 60 min hard limit
 const COMPACT_THRESHOLD_TOKENS = 100_000; // auto-compact at ~100k tokens
@@ -64,6 +78,7 @@ async function createSession(bookSlug: string): Promise<ManagedSession> {
   const { session } = await createAgentSession({
     cwd,
     agentDir,
+    model: resolvedModel,
     tools,
     resourceLoader: loader,
     sessionManager: SessionManager.create(sessionDir),
@@ -112,6 +127,7 @@ async function restoreSession(bookSlug: string): Promise<ManagedSession | null> 
     const { session, modelFallbackMessage } = await createAgentSession({
       cwd,
       agentDir,
+      model: resolvedModel,
       tools,
       resourceLoader: loader,
       sessionManager: SessionManager.continueRecent(sessionDir),
