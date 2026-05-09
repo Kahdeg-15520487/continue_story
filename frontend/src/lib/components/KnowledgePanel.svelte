@@ -56,8 +56,16 @@
     doSearch();
   }
 
+  let tagSuggestions = $derived.by(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return [];
+    return allTags
+      .filter(t => t.toLowerCase().includes(q) && !selectedTags.includes(t))
+      .slice(0, 8);
+  });
+
   let filteredCategories = $derived.by(() => {
-    if (searchResults !== null) return null; // search mode
+    if (searchResults !== null) return null;
     if (selectedTags.length === 0) return categories;
     return categories.map(cat => ({
       ...cat,
@@ -167,29 +175,37 @@
     </div>
 
     <div class="kb-search">
-      <input
-        type="text"
-        bind:value={searchQuery}
-        placeholder="Search entries..."
-        oninput={() => doSearch()}
-        onkeydown={(e) => e.key === 'Escape' && clearSearch()}
-      />
+      <div class="kb-search-input-wrap">
+        {#each selectedTags as tag}
+          <span class="kb-selected-tag">
+            {tag}
+            <button onclick={() => toggleTag(tag)}>×</button>
+          </span>
+        {/each}
+        <input
+          type="text"
+          bind:value={searchQuery}
+          placeholder={selectedTags.length > 0 ? 'Add tag...' : 'Search entries...'}
+          oninput={() => { if (!searchQuery.trim()) searchResults = null; else doSearch(); }}
+          onkeydown={(e) => {
+            if (e.key === 'Backspace' && !searchQuery && selectedTags.length > 0) {
+              toggleTag(selectedTags[selectedTags.length - 1]);
+            }
+            if (e.key === 'Escape') clearSearch();
+          }}
+        />
+        {#if tagSuggestions.length > 0}
+          <div class="kb-autocomplete">
+            {#each tagSuggestions as tag}
+              <button class="kb-ac-item" onclick={() => { toggleTag(tag); searchQuery = ''; }}>🏷 {tag}</button>
+            {/each}
+          </div>
+        {/if}
+      </div>
       {#if searchQuery || selectedTags.length > 0}
         <button class="kb-clear-search" onclick={clearSearch}>✕</button>
       {/if}
     </div>
-
-    {#if allTags.length > 0}
-      <div class="kb-tags">
-        {#each allTags as tag}
-          <button
-            class="kb-tag"
-            class:active={selectedTags.includes(tag)}
-            onclick={() => toggleTag(tag)}
-          >{tag}</button>
-        {/each}
-      </div>
-    {/if}
 
     {#if showNewEntry && selectedCategory}
       <div class="kb-new-form">
@@ -308,19 +324,86 @@
     gap: 4px;
   }
 
-  .kb-search input {
+  .kb-search-input-wrap {
     flex: 1;
-    padding: 6px 8px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
     background: var(--bg-tertiary, #21262d);
     border: 1px solid var(--border, #30363d);
     border-radius: 4px;
+    position: relative;
+  }
+
+  .kb-search-input-wrap:focus-within {
+    border-color: var(--accent, #6366f1);
+  }
+
+  .kb-search-input-wrap input {
+    flex: 1;
+    min-width: 80px;
+    padding: 2px 0;
+    background: none;
+    border: none;
     color: var(--text-primary, #c9d1d9);
     font-size: 12px;
     outline: none;
   }
 
-  .kb-search input:focus {
-    border-color: var(--accent, #6366f1);
+  .kb-selected-tag {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px 6px;
+    background: var(--accent, #6366f1);
+    border-radius: 10px;
+    color: white;
+    font-size: 11px;
+  }
+
+  .kb-selected-tag button {
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.7);
+    cursor: pointer;
+    font-size: 11px;
+    padding: 0 2px;
+  }
+
+  .kb-selected-tag button:hover {
+    color: white;
+  }
+
+  .kb-autocomplete {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: var(--bg-secondary, #161b22);
+    border: 1px solid var(--border, #30363d);
+    border-radius: 0 0 4px 4px;
+    z-index: 10;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  .kb-ac-item {
+    display: block;
+    width: 100%;
+    padding: 6px 10px;
+    background: none;
+    border: none;
+    color: var(--text-secondary, #8b949e);
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .kb-ac-item:hover {
+    background: var(--bg-tertiary, #21262d);
+    color: var(--text-primary, #c9d1d9);
   }
 
   .kb-clear-search {
@@ -334,36 +417,6 @@
 
   .kb-clear-search:hover {
     color: var(--text-primary, #c9d1d9);
-  }
-
-  .kb-tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-    padding: 6px 12px;
-    border-bottom: 1px solid var(--border, #30363d);
-  }
-
-  .kb-tag {
-    padding: 2px 8px;
-    background: var(--bg-tertiary, #21262d);
-    border: 1px solid var(--border, #30363d);
-    border-radius: 12px;
-    color: var(--text-secondary, #8b949e);
-    font-size: 11px;
-    cursor: pointer;
-    transition: all 0.15s;
-  }
-
-  .kb-tag:hover {
-    border-color: var(--accent, #6366f1);
-    color: var(--text-primary, #c9d1d9);
-  }
-
-  .kb-tag.active {
-    background: var(--accent, #6366f1);
-    border-color: var(--accent, #6366f1);
-    color: white;
   }
 
   .kb-entry-category {
