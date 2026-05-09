@@ -80,6 +80,8 @@ LoreEndpoints.Map(app);
 AgentEndpoints.Map(app);
 ChapterEndpoints.Map(app);
 InlineEditEndpoints.Map(app);
+KnowledgeEndpoints.Map(app);
+KnowledgeChatEndpoints.Map(app);
 
 if (!app.Environment.IsEnvironment("Testing"))
 {
