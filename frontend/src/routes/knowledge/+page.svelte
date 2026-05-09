@@ -108,7 +108,7 @@
 </script>
 
 <svelte:head>
-  <title>Knowledge Base — Knowledge Engine</title>
+  <title>Knowledge Base — Story Engine</title>
 </svelte:head>
 
 <div class="knowledge-page">

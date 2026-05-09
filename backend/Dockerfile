@@ -1,8 +1,8 @@
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 COPY . .
-RUN dotnet restore KnowledgeEngine.sln
-RUN dotnet publish KnowledgeEngine.sln -c Release -o /app
+RUN dotnet restore StoryEngine.sln
+RUN dotnet publish StoryEngine.sln -c Release -o /app
 
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 RUN apt-get update && \
@@ -24,4 +24,4 @@ RUN mkdir -p /library /data && chown appuser:appuser /library /data
 USER appuser
 EXPOSE 5000
 ENV ASPNETCORE_URLS=http://+:5000
-ENTRYPOINT ["dotnet", "KnowledgeEngine.Api.dll"]
+ENTRYPOINT ["dotnet", "StoryEngine.Api.dll"]

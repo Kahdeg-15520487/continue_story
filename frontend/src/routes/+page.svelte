@@ -90,7 +90,7 @@
 </script>
 
 <svelte:head>
-  <title>Library — Knowledge Engine</title>
+  <title>Library — Story Engine</title>
 </svelte:head>
 
 <svelte:window

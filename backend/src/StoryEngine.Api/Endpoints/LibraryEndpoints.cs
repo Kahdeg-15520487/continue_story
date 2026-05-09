@@ -1,0 +1,144 @@
+using StoryEngine.Api.Data;
+using StoryEngine.Api.Models;
+using Microsoft.EntityFrameworkCore;
+
+namespace StoryEngine.Api.Endpoints;
+
+public static class LibraryEndpoints
+{
+    public static void Map(WebApplication app)
+    {
+        var group = app.MapGroup("/api/books");
+
+        group.MapGet("/", async (AppDbContext db) =>
+        {
+            var books = await db.Books
+                .OrderBy(b => b.Title)
+                .Select(b => new BookSummaryDto(b))
+                .ToListAsync();
+            return Results.Ok(books);
+        });
+
+        group.MapGet("/{slug}", async (string slug, AppDbContext db, IConfiguration config) =>
+        {
+            var book = await db.Books.FirstOrDefaultAsync(b => b.Slug == slug);
+            if (book is null) return Results.NotFound();
+
+            // Reconcile status with disk reality
+            var libraryPath = config.GetValue<string>("Library:Path") ?? "/library";
+            var chaptersDir = Path.Combine(libraryPath, slug, "chapters");
+            var hasChapters = Directory.Exists(chaptersDir) && Directory.GetFiles(chaptersDir, "*.md").Any(f => !f.EndsWith(".scratch.md"));
+
+            if (hasChapters && book.Status != "ready")
+            {
+                book.Status = "ready";
+                book.ErrorMessage = null;
+                book.UpdatedAt = DateTime.UtcNow;
+                await db.SaveChangesAsync();
+            }
+
+            return Results.Ok(new BookDetailDto(book));
+        });
+
+        group.MapPost("/", async (CreateBookRequest req, AppDbContext db, IConfiguration config) =>
+        {
+            if (string.IsNullOrWhiteSpace(req.Title))
+                return Results.BadRequest(new { error = "Title is required" });
+
+            var slug = GenerateSlug(req.Title);
+            if (string.IsNullOrWhiteSpace(slug))
+                return Results.BadRequest(new { error = "Title produces an invalid slug" });
+
+            // De-duplicate slug if it already exists
+            var baseSlug = slug;
+            var counter = 2;
+            while (await db.Books.AnyAsync(b => b.Slug == slug))
+            {
+                slug = $"{baseSlug}-{counter++}";
+            }
+
+            var libraryPath = config.GetValue<string>("Library:Path") ?? "/library";
+            var bookDir = Path.Combine(libraryPath, slug);
+            Directory.CreateDirectory(bookDir);
+
+            var book = new Book
+            {
+                Slug = slug,
+                Title = req.Title,
+                Author = req.Author,
+                Year = req.Year,
+                SourceFile = req.SourceFile,
+                Status = req.SourceFile == null ? "ready" : "pending",
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+
+            db.Books.Add(book);
+            try
+            {
+                await db.SaveChangesAsync();
+            }
+            catch (DbUpdateException)
+            {
+                return Results.Conflict(new { error = "A book with this slug already exists" });
+            }
+
+            return Results.Created($"/api/books/{slug}", new BookDetailDto(book));
+        });
+
+        group.MapDelete("/{slug}", async (string slug, AppDbContext db, IConfiguration config) =>
+        {
+            var book = await db.Books.FirstOrDefaultAsync(b => b.Slug == slug);
+            if (book is null) return Results.NotFound();
+
+            var libraryPath = config.GetValue<string>("Library:Path") ?? "/library";
+            var bookDir = Path.Combine(libraryPath, slug);
+            if (Directory.Exists(bookDir))
+                Directory.Delete(bookDir, recursive: true);
+
+            db.Books.Remove(book);
+            await db.SaveChangesAsync();
+
+            return Results.NoContent();
+        });
+
+        group.MapPatch("/{slug}", async (string slug, UpdateBookRequest req, AppDbContext db) =>
+        {
+            var book = await db.Books.FirstOrDefaultAsync(b => b.Slug == slug);
+            if (book is null) return Results.NotFound();
+
+            if (req.Title is not null) book.Title = req.Title;
+            if (req.Author is not null) book.Author = req.Author;
+            book.UpdatedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+
+            return Results.Ok(new BookDetailDto(book));
+        });
+    }
+
+    private static string GenerateSlug(string title)
+    {
+        var parts = title
+            .ToLowerInvariant()
+            .Split(' ', '_', '/', '\\')
+            .Where(s => !string.IsNullOrEmpty(s))
+            .Select(s => System.Text.RegularExpressions.Regex.Replace(s, "[^a-z0-9]", ""))
+            .Where(s => !string.IsNullOrEmpty(s))
+            .ToArray();
+        return string.Join('-', parts);
+    }
+}
+
+// DTOs
+public record BookSummaryDto(int Id, string Slug, string Title, string? Author, int? Year, string Status, DateTime UpdatedAt)
+{
+    public BookSummaryDto(Book b) : this(b.Id, b.Slug, b.Title, b.Author, b.Year, b.Status, b.UpdatedAt) { }
+}
+
+public record BookDetailDto(int Id, string Slug, string Title, string? Author, int? Year, string? SourceFile, string Status, string? ErrorMessage, DateTime CreatedAt, DateTime UpdatedAt)
+{
+    public BookDetailDto(Book b) : this(b.Id, b.Slug, b.Title, b.Author, b.Year, b.SourceFile, b.Status, b.ErrorMessage, b.CreatedAt, b.UpdatedAt) { }
+}
+
+public record CreateBookRequest(string Title, string? Author, int? Year, string? SourceFile);
+public record UpdateBookRequest(string? Title, string? Author);

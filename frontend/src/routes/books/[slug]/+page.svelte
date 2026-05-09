@@ -407,7 +407,7 @@
 </script>
 
 <svelte:head>
-  <title>{$page.params.slug ? `${book?.title ?? 'Loading...'} — Knowledge Engine` : 'Knowledge Engine'}</title>
+  <title>{$page.params.slug ? `${book?.title ?? 'Loading...'} — Story Engine` : 'Story Engine'}</title>
 </svelte:head>
 
 {#if loading}
