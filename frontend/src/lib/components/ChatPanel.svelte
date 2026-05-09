@@ -9,11 +9,13 @@
     activeChapterId = null,
     onEditDone,
     onResponseDone,
+    mode = 'book',
   }: {
     slug: string;
     activeChapterId?: string | null;
     onEditDone?: (chapterId: string) => void;
     onResponseDone?: () => void;
+    mode?: 'book' | 'knowledge';
   } = $props();
 
   let messages: Array<{ role: 'user' | 'assistant'; text: string; thinking?: string }> = $state([]);
@@ -24,6 +26,7 @@
   let chatError = $state('');
   let chatContainer: HTMLDivElement;
   let currentSessionId = $state<string | null>(null);
+  let abortController: AbortController | null = null;
   let activeTools = $state<Array<{ name: string; args: any; id: number }>>([]);
   let completedTools = $state<Array<{ name: string; args: any; result?: string; isError: boolean; id: number }>>([]);
   let toolIdCounter = 0;
@@ -37,26 +40,30 @@
   });
 
   onMount(async () => {
-    let agentSessionId: string | null = null;
+    if (mode === 'knowledge') {
+      try {
+        const info = await api.getKnowledgeChatSession();
+        currentSessionId = info.sessionId;
+      } catch {
+        // Session will be created on first message
+      }
+    } else {
+      try {
+        const sessionResult = await api.getChatSession(slug);
+        currentSessionId = sessionResult.sessionId;
+      } catch {
+        // Session will be created on first message
+      }
 
-    try {
-      // Get the agent's current active session
-      const sessionResult = await api.getChatSession(slug);
-      agentSessionId = sessionResult.sessionId;
-      currentSessionId = agentSessionId;
-    } catch {
-      // Session will be created on first message
-    }
-
-    try {
-      // Load ALL chat history for this book (not filtered by session)
-      const history = await api.getChatHistory(slug, 100);
-      messages = history.map(m => ({
-        role: m.role as 'user' | 'assistant',
-        text: m.content,
-      }));
-    } catch {
-      // No history yet
+      try {
+        const history = await api.getChatHistory(slug, 100);
+        messages = history.map(m => ({
+          role: m.role as 'user' | 'assistant',
+          text: m.content,
+        }));
+      } catch {
+        // No history yet
+      }
     }
   });
 
@@ -73,45 +80,100 @@
     activeTools = [];
     completedTools = [];
 
-    api.chat(
-      slug,
-      msg,
-      (chunk) => { currentResponse += chunk; },
-      () => {
-        if (currentResponse) {
-          messages = [...messages, { role: 'assistant', text: currentResponse, thinking: thinkingText || undefined }];
+    if (mode === 'knowledge') {
+      // Ensure session exists
+      if (!currentSessionId) {
+        try {
+          const info = await api.getKnowledgeChatSession();
+          currentSessionId = info.sessionId;
+        } catch {
+          try {
+            const info = await api.createNewKnowledgeChatSession();
+            currentSessionId = info.sessionId;
+          } catch (err: any) {
+            chatError = err.message;
+            streaming = false;
+            return;
+          }
         }
-        currentResponse = '';
-        thinkingText = '';
-        streaming = false;
-        onResponseDone?.();
-      },
-      (err) => { chatError = err; streaming = false; },
-      (thinking) => { thinkingText += thinking; },
-      (toolName, args) => {
-        const id = ++toolIdCounter;
-        activeTools.push({ name: toolName, args, id });
-        completedTools = completedTools.filter(t => true); // trigger reactivity
-      },
-      (toolName, result, isError) => {
-        const tool = activeTools.find(t => t.name === toolName);
-        if (tool) {
-          activeTools = activeTools.filter(t => t !== tool);
-          let resultStr: string;
-          if (typeof result === 'string') resultStr = result.slice(0, 200);
-          else resultStr = JSON.stringify(result).slice(0, 200);
-          completedTools.push({ ...tool, result: resultStr, isError });
-        }
-      },
-      { activeChapterId, sessionId: currentSessionId, onEditDone, onSessionInfo: (id) => { currentSessionId = id; } }
-    );
+      }
+      abortController = api.knowledgeChat(
+        msg,
+        currentSessionId!,
+        (chunk) => { currentResponse += chunk; },
+        () => {
+          if (currentResponse) {
+            messages = [...messages, { role: 'assistant', text: currentResponse, thinking: thinkingText || undefined }];
+          }
+          currentResponse = '';
+          thinkingText = '';
+          streaming = false;
+          abortController = null;
+          onResponseDone?.();
+        },
+        (err) => { chatError = err; streaming = false; abortController = null; },
+        (thinking) => { thinkingText += thinking; },
+        (toolName, args) => {
+          const id = ++toolIdCounter;
+          activeTools.push({ name: toolName, args, id });
+          completedTools = completedTools.filter(t => true);
+        },
+        (toolName, result, isError) => {
+          const tool = activeTools.find(t => t.name === toolName);
+          if (tool) {
+            activeTools = activeTools.filter(t => t !== tool);
+            let resultStr: string;
+            if (typeof result === 'string') resultStr = result.slice(0, 200);
+            else resultStr = JSON.stringify(result).slice(0, 200);
+            completedTools.push({ ...tool, result: resultStr, isError });
+          }
+        },
+      );
+    } else {
+      api.chat(
+        slug,
+        msg,
+        (chunk) => { currentResponse += chunk; },
+        () => {
+          if (currentResponse) {
+            messages = [...messages, { role: 'assistant', text: currentResponse, thinking: thinkingText || undefined }];
+          }
+          currentResponse = '';
+          thinkingText = '';
+          streaming = false;
+          onResponseDone?.();
+        },
+        (err) => { chatError = err; streaming = false; },
+        (thinking) => { thinkingText += thinking; },
+        (toolName, args) => {
+          const id = ++toolIdCounter;
+          activeTools.push({ name: toolName, args, id });
+          completedTools = completedTools.filter(t => true); // trigger reactivity
+        },
+        (toolName, result, isError) => {
+          const tool = activeTools.find(t => t.name === toolName);
+          if (tool) {
+            activeTools = activeTools.filter(t => t !== tool);
+            let resultStr: string;
+            if (typeof result === 'string') resultStr = result.slice(0, 200);
+            else resultStr = JSON.stringify(result).slice(0, 200);
+            completedTools.push({ ...tool, result: resultStr, isError });
+          }
+        },
+        { activeChapterId, sessionId: currentSessionId, onEditDone, onSessionInfo: (id) => { currentSessionId = id; } }
+      );
+    }
   }
 
   async function stop() {
     if (!streaming) return;
     try {
-      const result = await api.abortChat(slug);
-      // Add whatever we had so far as a partial response
+      if (mode === 'knowledge') {
+        abortController?.abort();
+        abortController = null;
+      } else {
+        await api.abortChat(slug);
+      }
       if (currentResponse) {
         messages = [...messages, { role: 'assistant', text: currentResponse + '\n\n_[Stopped]_', thinking: thinkingText || undefined }];
       }
@@ -126,11 +188,11 @@
   }
 
   async function retry() {
-    if (streaming) return;
+    if (streaming || mode === 'knowledge') return;
     chatError = '';
     try {
-      const result = await api.getLastUserMessage(slug);
-      const msg = result.lastUserMessage;
+      const { lastUserMessage: msg } = await api.getLastUserMessage(slug);
+
       if (!msg) { chatError = 'No previous message to retry'; return; }
       // Remove the last assistant message if present
       if (messages.length > 0 && messages[messages.length - 1].role === 'assistant') {
@@ -187,8 +249,13 @@
 
   async function startNewSession() {
     try {
-      const result = await api.createNewChatSession(slug);
-      currentSessionId = result.sessionId;
+      if (mode === 'knowledge') {
+        const info = await api.createNewKnowledgeChatSession();
+        currentSessionId = info.sessionId;
+      } else {
+        const { sessionId } = await api.createNewChatSession(slug);
+        currentSessionId = sessionId;
+      }
       messages = [];
       chatError = '';
     } catch (err: any) {
@@ -199,7 +266,13 @@
   async function clearHistory() {
     if (!confirm('Clear all chat history?')) return;
     try {
-      await api.clearChatHistory(slug, currentSessionId ?? undefined);
+      if (mode === 'knowledge') {
+        if (currentSessionId) {
+          await fetch(`/api/knowledge/chat/session/${currentSessionId}`, { method: 'DELETE' });
+        }
+      } else {
+        await api.clearChatHistory(slug, currentSessionId ?? undefined);
+      }
       messages = [];
       currentSessionId = null;
       chatError = '';
@@ -224,7 +297,7 @@
 
   <div class="messages" bind:this={chatContainer}>
     {#if messages.length === 0 && !streaming}
-      <p class="empty-hint">Ask a question about this book...</p>
+      <p class="empty-hint">{mode === 'knowledge' ? 'Ask the research assistant...' : 'Ask a question about this book...'}</p>
     {/if}
 
     {#each messages as msg}
@@ -304,7 +377,7 @@
   <form class="input-form" onsubmit={(e) => { e.preventDefault(); send(); }}>
     <textarea
       bind:value={input}
-      placeholder="Ask about the book..."
+      placeholder={mode === 'knowledge' ? 'Ask the research assistant...' : 'Ask about the book...'}
       disabled={streaming}
       onkeydown={handleKeydown}
       rows="2"
