@@ -406,6 +406,10 @@
   });
 </script>
 
+<svelte:head>
+  <title>{$page.params.slug ? `${book?.title ?? 'Loading...'} — Knowledge Engine` : 'Knowledge Engine'}</title>
+</svelte:head>
+
 {#if loading}
   <div class="loading-screen">Loading book...</div>
 {:else if error}

@@ -89,6 +89,10 @@
   onMount(loadBooks);
 </script>
 
+<svelte:head>
+  <title>Library — Knowledge Engine</title>
+</svelte:head>
+
 <svelte:window
   ondragover={(e) => { e.preventDefault(); dragging = true; }}
   ondragleave={() => { dragging = false; }}
