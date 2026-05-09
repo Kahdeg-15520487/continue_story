@@ -144,7 +144,14 @@
     searchResults = null;
   }
 
-  let renderedHtml = $derived(entryContent ? marked.parse(entryContent, { async: false }) as string : '');
+  function stripFrontmatter(md: string): string {
+    if (!md.startsWith('---')) return md;
+    const end = md.indexOf('\n---', 3);
+    if (end < 0) return md;
+    return md.slice(end + 4).trimStart();
+  }
+
+  let renderedHtml = $derived(entryContent ? marked.parse(stripFrontmatter(entryContent), { async: false }) as string : '');
 
   onMount(loadIndex);
 </script>
