@@ -47,6 +47,16 @@
       } catch {
         // Session will be created on first message
       }
+
+      try {
+        const history = await api.getChatHistory('__shared__', 100);
+        messages = history.map(m => ({
+          role: m.role as 'user' | 'assistant',
+          text: m.content,
+        }));
+      } catch {
+        // No history yet
+      }
     } else {
       try {
         const sessionResult = await api.getChatSession(slug);
@@ -80,6 +90,11 @@
     activeTools = [];
     completedTools = [];
 
+    // Save user message to DB
+    if (mode === 'knowledge') {
+      api.saveChatMessage('__shared__', 'user', msg).catch(() => {});
+    }
+
     if (mode === 'knowledge') {
       if (!currentSessionId) {
         try {
@@ -103,6 +118,7 @@
         () => {
           if (currentResponse) {
             messages = [...messages, { role: 'assistant', text: currentResponse, thinking: thinkingText || undefined }];
+            api.saveChatMessage('__shared__', 'assistant', currentResponse, thinkingText || undefined).catch(() => {});
           }
           currentResponse = '';
           thinkingText = '';
@@ -267,6 +283,7 @@
         if (currentSessionId) {
           await fetch(`/api/knowledge/chat/session/${currentSessionId}`, { method: 'DELETE' });
         }
+        await api.clearChatHistory('__shared__');
       } else {
         await api.clearChatHistory(slug, currentSessionId ?? undefined);
       }

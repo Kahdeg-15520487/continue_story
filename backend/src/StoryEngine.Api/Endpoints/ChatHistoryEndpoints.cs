@@ -7,22 +7,31 @@ namespace StoryEngine.Api.Endpoints;
 
 public static class ChatHistoryEndpoints
 {
+    private const string SHARED_SLUG = "__shared__";
+
     public static void Map(WebApplication app)
     {
         var group = app.MapGroup("/api/books/{slug}/chat");
 
-        // Get chat history for a book
+        // Get chat history
         group.MapGet("/", async (string slug, int? limit, HttpContext context, AppDbContext db) =>
         {
             if (string.IsNullOrWhiteSpace(slug) || slug.Contains("..") || slug.Contains('/') || slug.Contains('\\'))
                 return Results.BadRequest(new { error = "Invalid slug" });
 
-            var book = await db.Books.FirstOrDefaultAsync(b => b.Slug == slug);
-            if (book is null)
-                return Results.NotFound(new { error = "Book not found" });
+            IQueryable<ChatMessage> query;
 
-            var query = db.ChatMessages
-                .Where(m => m.BookId == book.Id);
+            if (slug == SHARED_SLUG)
+            {
+                query = db.ChatMessages.Where(m => m.BookId == null);
+            }
+            else
+            {
+                var book = await db.Books.FirstOrDefaultAsync(b => b.Slug == slug);
+                if (book is null)
+                    return Results.NotFound(new { error = "Book not found" });
+                query = db.ChatMessages.Where(m => m.BookId == book.Id);
+            }
 
             var sessionId = context.Request.Query.ContainsKey("sessionId")
                 ? context.Request.Query["sessionId"].ToString()
@@ -46,13 +55,18 @@ public static class ChatHistoryEndpoints
             if (string.IsNullOrWhiteSpace(slug) || slug.Contains("..") || slug.Contains('/') || slug.Contains('\\'))
                 return Results.BadRequest(new { error = "Invalid slug" });
 
-            var book = await db.Books.FirstOrDefaultAsync(b => b.Slug == slug);
-            if (book is null)
-                return Results.NotFound(new { error = "Book not found" });
+            int? bookId = null;
+            if (slug != SHARED_SLUG)
+            {
+                var book = await db.Books.FirstOrDefaultAsync(b => b.Slug == slug);
+                if (book is null)
+                    return Results.NotFound(new { error = "Book not found" });
+                bookId = book.Id;
+            }
 
             var msg = new ChatMessage
             {
-                BookId = book.Id,
+                BookId = bookId,
                 Role = req.Role,
                 Content = req.Content,
                 Thinking = req.Thinking,
@@ -65,15 +79,11 @@ public static class ChatHistoryEndpoints
             return Results.Ok(new { msg.Id, msg.Role, msg.Content, msg.Thinking, msg.CreatedAt });
         });
 
-        // Clear chat history for a book
+        // Clear chat history
         group.MapDelete("/", async (string slug, HttpContext context, AppDbContext db, IAgentService agentService) =>
         {
             if (string.IsNullOrWhiteSpace(slug) || slug.Contains("..") || slug.Contains('/') || slug.Contains('\\'))
                 return Results.BadRequest(new { error = "Invalid slug" });
-
-            var book = await db.Books.FirstOrDefaultAsync(b => b.Slug == slug);
-            if (book is null)
-                return Results.NotFound(new { error = "Book not found" });
 
             var sessionId = context.Request.Query.ContainsKey("sessionId")
                 ? context.Request.Query["sessionId"].ToString()
@@ -83,7 +93,19 @@ public static class ChatHistoryEndpoints
                 try { await agentService.KillSessionAsync(sessionId); } catch { }
             }
 
-            var query = db.ChatMessages.Where(m => m.BookId == book.Id);
+            IQueryable<ChatMessage> query;
+            if (slug == SHARED_SLUG)
+            {
+                query = db.ChatMessages.Where(m => m.BookId == null);
+            }
+            else
+            {
+                var book = await db.Books.FirstOrDefaultAsync(b => b.Slug == slug);
+                if (book is null)
+                    return Results.NotFound(new { error = "Book not found" });
+                query = db.ChatMessages.Where(m => m.BookId == book.Id);
+            }
+
             if (!string.IsNullOrEmpty(sessionId))
                 query = query.Where(m => m.SessionId == sessionId);
 
