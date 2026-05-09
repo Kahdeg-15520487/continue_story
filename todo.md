@@ -6,6 +6,12 @@
 
 - [ ] **#9** **[high]** Step 1: Replace IAgentService.cs — DONE | Step 2: Replace AgentService.cs — DONE | Step 3: Update ChatEndpoints.cs — DONE | Step 4: Update LoreJobService.cs — DONE | Step 5: Build — SUCCESS (0 errors, 0 warnings) | Step 6: Commit — c2310fd
 
+## Completed
+
+- [x] **#10** **[high]** Task 1: Add appendSystemPrompt to agent's DefaultResourceLoader with static prompt content
+- [x] **#11** **[high]** Task 2: Replace two-phase SendPromptAsync + StreamPromptAsync with lightweight context hint
+- [x] **#12** Task 3: Verify no regressions - check inline edit, lore job, and other callers
+
 <!-- Raw Data -->
 ```json
 {
@@ -18,8 +24,38 @@
       "tags": [],
       "createdAt": 1776597254664,
       "archived": false
+    },
+    {
+      "id": 10,
+      "text": "Task 1: Add appendSystemPrompt to agent's DefaultResourceLoader with static prompt content",
+      "done": true,
+      "priority": "high",
+      "tags": [],
+      "createdAt": 1778328185965,
+      "archived": false,
+      "completedAt": 1778328230734
+    },
+    {
+      "id": 11,
+      "text": "Task 2: Replace two-phase SendPromptAsync + StreamPromptAsync with lightweight context hint",
+      "done": true,
+      "priority": "high",
+      "tags": [],
+      "createdAt": 1778328189993,
+      "archived": false,
+      "completedAt": 1778328301225
+    },
+    {
+      "id": 12,
+      "text": "Task 3: Verify no regressions - check inline edit, lore job, and other callers",
+      "done": true,
+      "priority": "medium",
+      "tags": [],
+      "createdAt": 1778328192453,
+      "archived": false,
+      "completedAt": 1778328357133
     }
   ],
-  "nextId": 10
+  "nextId": 13
 }
 ```

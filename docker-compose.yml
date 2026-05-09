@@ -46,7 +46,6 @@ services:
     volumes:
       - library-data:/library
       - ./skills:/skills:ro
-      - ./agent/models.json:/home/node/.pi/agent/models.json:ro
     environment:
       - PI_CWD=/library
       - PORT=3001

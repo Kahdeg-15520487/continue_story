@@ -1,5 +1,6 @@
 using KnowledgeEngine.Api.Data;
 using KnowledgeEngine.Api.Models;
+using KnowledgeEngine.Api.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace KnowledgeEngine.Api.Endpoints;
@@ -66,7 +67,7 @@ public static class ChatHistoryEndpoints
         });
 
         // Clear chat history for a book
-        group.MapDelete("/", async (string slug, HttpContext context, AppDbContext db) =>
+        group.MapDelete("/", async (string slug, HttpContext context, AppDbContext db, IAgentService agentService) =>
         {
             if (string.IsNullOrWhiteSpace(slug) || slug.Contains("..") || slug.Contains('/') || slug.Contains('\\'))
                 return Results.BadRequest(new { error = "Invalid slug" });
@@ -75,11 +76,16 @@ public static class ChatHistoryEndpoints
             if (book is null)
                 return Results.NotFound(new { error = "Book not found" });
 
-            var query = db.ChatMessages.Where(m => m.BookId == book.Id);
-
+            // Kill agent session if we have one
             var sessionId = context.Request.Query.ContainsKey("sessionId")
                 ? context.Request.Query["sessionId"].ToString()
                 : null;
+            if (!string.IsNullOrEmpty(sessionId))
+            {
+                try { await agentService.KillSessionAsync(sessionId); } catch { }
+            }
+
+            var query = db.ChatMessages.Where(m => m.BookId == book.Id);
             if (!string.IsNullOrEmpty(sessionId))
                 query = query.Where(m => m.SessionId == sessionId);
 

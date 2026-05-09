@@ -1,7 +1,7 @@
 import http from "http";
 import https from "https";
 import { Type } from "@sinclair/typebox";
-import { defineTool } from "@mariozechner/pi-coding-agent";
+import type { AgentTool } from "@earendil-works/pi-agent-core";
 
 const SEARXNG_URL = process.env.SEARXNG_URL || "http://searxng:8080";
 
@@ -15,7 +15,6 @@ function fetchUrl(urlStr: string, timeout = 15000): Promise<{ status: number; bo
       url,
       { timeout, headers: { "User-Agent": "Mozilla/5.0 (compatible; StoryAgent/1.0)" } },
       (res) => {
-        // Follow redirects
         if (res.statusCode! >= 300 && res.statusCode! < 400 && res.headers.location) {
           return fetchUrl(res.headers.location, timeout).then(resolve, reject);
         }
@@ -48,21 +47,20 @@ function htmlToText(html: string): string {
 
 // ---------- web_search ----------
 
-export const webSearchTool = defineTool({
+export const webSearchTool: AgentTool = {
   name: "web_search",
   label: "Web Search",
   description:
     "Search the web using SearXNG. Returns a list of results with title, URL, and snippet. " +
     "Use this to research franchises, games, novels, characters, settings, or any topic before writing. " +
     "For deeper research, follow up with web_fetch on promising results.",
-  promptSnippet: "web_search({query, categories?, max_results?}) — search the web for information",
   parameters: Type.Object({
     query: Type.String({ description: "Search query" }),
     categories: Type.Optional(Type.String({ description: "Search category: general, news, images, it, science, files, music, videos, social media. Default: general" })),
     language: Type.Optional(Type.String({ description: "Language code, e.g. en, ja, ko, vi. Default: en" })),
     max_results: Type.Optional(Type.Number({ description: "Maximum results to return. Default: 10" })),
   }),
-  async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+  async execute(_toolCallId, params, _signal) {
     const max = params.max_results || 10;
     const searchParams = new URLSearchParams({ q: params.query, format: "json" });
     if (params.categories) searchParams.set("categories", params.categories);
@@ -73,23 +71,23 @@ export const webSearchTool = defineTool({
     try {
       response = await fetchUrl(url);
     } catch (err: any) {
-      return { content: [{ type: "text" as const, text: `Search failed: ${err.message}` }], isError: true };
+      return { content: [{ type: "text" as const, text: `Search failed: ${err.message}` }], details: { isError: true } };
     }
 
     if (response.status !== 200) {
-      return { content: [{ type: "text" as const, text: `Search returned HTTP ${response.status}` }], isError: true };
+      return { content: [{ type: "text" as const, text: `Search returned HTTP ${response.status}` }], details: { isError: true } };
     }
 
     let data: any;
     try {
       data = JSON.parse(response.body);
     } catch {
-      return { content: [{ type: "text" as const, text: "Failed to parse search results" }], isError: true };
+      return { content: [{ type: "text" as const, text: "Failed to parse search results" }], details: { isError: true } };
     }
 
     const results = (data.results || []).slice(0, max);
     if (results.length === 0) {
-      return { content: [{ type: "text" as const, text: "No results found." }] };
+      return { content: [{ type: "text" as const, text: "No results found." }], details: {} };
     }
 
     const text = results
@@ -100,40 +98,39 @@ export const webSearchTool = defineTool({
       })
       .join("\n\n");
 
-    return { content: [{ type: "text" as const, text }] };
+    return { content: [{ type: "text" as const, text }], details: {} };
   },
-});
+};
 
 // ---------- web_fetch ----------
 
-export const webFetchTool = defineTool({
+export const webFetchTool: AgentTool = {
   name: "web_fetch",
   label: "Web Fetch",
   description:
     "Fetch a web page and extract its text content. Use after web_search to read full pages. " +
     "Good for reading wiki pages, articles, reviews, and reference material about franchises/stories.",
-  promptSnippet: "web_fetch({url, max_length?}) — fetch and read a web page's content",
   parameters: Type.Object({
     url: Type.String({ description: "URL to fetch" }),
     max_length: Type.Optional(Type.Number({ description: "Max characters to return. Default: 10000" })),
   }),
-  async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+  async execute(_toolCallId, params, _signal) {
     const maxLen = params.max_length || 10000;
     let response;
     try {
       response = await fetchUrl(params.url);
     } catch (err: any) {
-      return { content: [{ type: "text" as const, text: `Fetch failed: ${err.message}` }], isError: true };
+      return { content: [{ type: "text" as const, text: `Fetch failed: ${err.message}` }], details: { isError: true } };
     }
 
     if (response.status !== 200) {
-      return { content: [{ type: "text" as const, text: `HTTP ${response.status}` }], isError: true };
+      return { content: [{ type: "text" as const, text: `HTTP ${response.status}` }], details: { isError: true } };
     }
 
     const text = htmlToText(response.body);
     const truncated = text.slice(0, maxLen);
     const suffix = text.length > maxLen ? `\n\n... [truncated, ${text.length} chars total]` : "";
 
-    return { content: [{ type: "text" as const, text: truncated + suffix }] };
+    return { content: [{ type: "text" as const, text: truncated + suffix }], details: {} };
   },
-});
+};

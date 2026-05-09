@@ -163,6 +163,7 @@
     try {
       await api.clearChatHistory(slug, currentSessionId ?? undefined);
       messages = [];
+      currentSessionId = null;
       chatError = '';
     } catch (err: any) { chatError = err.message; }
   }
