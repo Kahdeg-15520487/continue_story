@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { api } from '$lib/api';
   import { marked } from 'marked';
+  import { describeToolActivity } from '$lib/tool-labels';
 
   let {
     slug,
@@ -23,6 +24,9 @@
   let chatError = $state('');
   let chatContainer: HTMLDivElement;
   let currentSessionId = $state<string | null>(null);
+  let activeTools = $state<Array<{ name: string; args: any; id: number }>>([]);
+  let completedTools = $state<Array<{ name: string; args: any; result?: string; isError: boolean; id: number }>>([]);
+  let toolIdCounter = 0;
 
   $effect(() => {
     const _msgs = messages;
@@ -66,6 +70,8 @@
     streaming = true;
     currentResponse = '';
     thinkingText = '';
+    activeTools = [];
+    completedTools = [];
 
     api.chat(
       slug,
@@ -82,6 +88,21 @@
       },
       (err) => { chatError = err; streaming = false; },
       (thinking) => { thinkingText += thinking; },
+      (toolName, args) => {
+        const id = ++toolIdCounter;
+        activeTools.push({ name: toolName, args, id });
+        completedTools = completedTools.filter(t => true); // trigger reactivity
+      },
+      (toolName, result, isError) => {
+        const tool = activeTools.find(t => t.name === toolName);
+        if (tool) {
+          activeTools = activeTools.filter(t => t !== tool);
+          let resultStr: string;
+          if (typeof result === 'string') resultStr = result.slice(0, 200);
+          else resultStr = JSON.stringify(result).slice(0, 200);
+          completedTools.push({ ...tool, result: resultStr, isError });
+        }
+      },
       { activeChapterId, sessionId: currentSessionId, onEditDone, onSessionInfo: (id) => { currentSessionId = id; } }
     );
   }
@@ -120,6 +141,8 @@
       streaming = true;
       currentResponse = '';
       thinkingText = '';
+      activeTools = [];
+      completedTools = [];
       currentSessionId = null;
       api.chat(
         slug,
@@ -136,6 +159,21 @@
         },
         (err) => { chatError = err; streaming = false; },
         (thinking) => { thinkingText += thinking; },
+        (toolName, args) => {
+          const id = ++toolIdCounter;
+          activeTools.push({ name: toolName, args, id });
+          completedTools = completedTools.filter(t => true); // trigger reactivity
+        },
+        (toolName, result, isError) => {
+          const tool = activeTools.find(t => t.name === toolName);
+          if (tool) {
+            activeTools = activeTools.filter(t => t !== tool);
+            let resultStr: string;
+            if (typeof result === 'string') resultStr = result.slice(0, 200);
+            else resultStr = JSON.stringify(result).slice(0, 200);
+            completedTools.push({ ...tool, result: resultStr, isError });
+          }
+        },
         { activeChapterId, sessionId: null, onEditDone, onSessionInfo: (id) => { currentSessionId = id; } }
       );
     } catch (err: any) {
@@ -219,6 +257,38 @@
       </div>
     {/if}
 
+    {#if streaming && (completedTools.length > 0 || activeTools.length > 0)}
+      <div class="message assistant">
+        <div class="message-role">AI</div>
+        {#each completedTools as tool (tool.id)}
+          {@const activity = describeToolActivity(tool.name, tool.args)}
+          <div class="tool-block completed" class:error={tool.isError}>
+            <div class="tool-header">
+              <span class="tool-icon">{activity.icon}</span>
+              <span class="tool-label">{activity.label}</span>
+              <span class="tool-status">✓</span>
+            </div>
+            {#if tool.result}
+              <details>
+                <summary>Result</summary>
+                <pre class="tool-result">{tool.result}</pre>
+              </details>
+            {/if}
+          </div>
+        {/each}
+        {#each activeTools as tool (tool.id)}
+          {@const activity = describeToolActivity(tool.name, tool.args)}
+          <div class="tool-block active">
+            <div class="tool-header">
+              <span class="tool-icon spinning">{activity.icon}</span>
+              <span class="tool-label">{activity.label}</span>
+              <span class="tool-status"><span class="spinner"></span></span>
+            </div>
+          </div>
+        {/each}
+      </div>
+    {/if}
+
     {#if streaming && currentResponse}
       <div class="message assistant">
         <div class="message-role">AI</div>
@@ -273,6 +343,14 @@
   .thinking-spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .thinking-text { margin-top: 8px; padding: 8px; background: rgba(0,0,0,0.2); border-radius: 4px; font-size: 11px; color: var(--text-secondary); max-height: 200px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; }
+  .tool-block { margin: 6px 0; padding: 6px 10px; background: var(--bg-tertiary, #21262d); border: 1px solid var(--border, #30363d); border-radius: 6px; font-size: 12px; color: var(--text-secondary, #8b949e); }
+  .tool-block.active { border-color: var(--accent, #6366f1); }
+  .tool-block.error { border-color: #f97583; }
+  .tool-header { display: flex; align-items: center; gap: 6px; }
+  .tool-label { flex: 1; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tool-status { font-size: 11px; }
+  .tool-result { margin-top: 6px; padding: 6px; background: var(--bg-primary, #0d1117); border-radius: 4px; max-height: 120px; overflow-y: auto; white-space: pre-wrap; font-size: 11px; }
+  .spinner { display: inline-block; width: 10px; height: 10px; border: 2px solid var(--border, #30363d); border-top-color: var(--accent, #6366f1); border-radius: 50%; animation: spin 0.8s linear infinite; }
   .cursor { animation: blink 1s step-end infinite; }
   @keyframes blink { 50% { opacity: 0; } }
   .chat-error { background: #3d1f1f; color: #f97583; padding: 8px 12px; border-radius: 6px; font-size: 12px; }
