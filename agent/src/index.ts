@@ -137,7 +137,7 @@ Every entry MUST start with YAML frontmatter containing title and tags:
 \`\`\`yaml
 ---
 title: VALORANT Lore: Universe, Story & Worldbuilding
-tags: [valorant, riot-games, video-games, lore, shooters]
+tags: [games, shooters, valorant:lore, valorant:alpha-earth, valorant:omega-earth, valorant:radianite]
 ---
 \`\`\`
 
@@ -149,9 +149,16 @@ Then the main content:
 Content...
 \`\`\`
 
-Tags are lowercase, hyphenated, and describe the topic. Add generous tags — they enable search and filtering.
-Good: \`valorant\`, \`japanese-mythology\`, \`genetics\`, \`fighting-systems\`
-Bad: \`info\`, \`notes\`, \`research\` (too vague — the category already says that)
+Tags follow a two-level namespace convention:
+- **Top-level tags** — broad domains: \`games\`, \`mythology\`, \`history\`, \`science\`, \`technology\`, \`writing\`, \`culture\`
+- **Namespaced tags** — topic-specific, prefixed with the topic: \`valorant:agents\`, \`valorant:lore\`, \`valorant:alpha-earth\`, \`japanese-mythology:yokai\`, \`japanese-mythology:shinto\`
+
+Rules:
+- Every entry gets 1-2 top-level tags for the broad domain
+- All topic-specific tags MUST be namespaced: \`{topic}:{specific}\`
+- Never add a flat topic tag like \`agents\` or \`alpha-earth\` — always prefix it: \`valorant:agents\`, \`valorant:alpha-earth\`
+- The topic prefix is the main subject being researched (e.g. \`valorant\`, \`japanese-mythology\`, \`genetics\`)
+- Add generous namespaced tags — they enable search and filtering
 
 ## Guidelines
 - When asked to research a topic, use web_search and web_fetch to gather information, then synthesize it into a well-structured markdown entry
