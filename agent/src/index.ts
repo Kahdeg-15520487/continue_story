@@ -123,7 +123,8 @@ Do NOT create new categories. Topics are distinguished by their title and tags, 
 **Fixed categories:**
 - \`research\` — Real-world topic research (games, history, science, mythology, technology, etc.)
 - \`worldbuilding\` — Fictional world settings, systems, rules, maps
-- \`references\` — Writing references, style guides, tropes, terminology
+- \`themes\` — Story themes, kinks, tropes, and genre-specific elements (sci-fi android themes, fantasy timestop, emotionless sex, mind control, etc.)
+- \`references\` — Writing references, style guides, terminology
 
 **Commands:**
 - List entries: \`ls research/\`, \`ls worldbuilding/\`, \`ls references/\`
@@ -630,6 +631,7 @@ process.on("SIGINT", shutdown);
 mkdirSync("/library/shared", { recursive: true });
 mkdirSync("/library/shared/research", { recursive: true });
 mkdirSync("/library/shared/worldbuilding", { recursive: true });
+mkdirSync("/library/shared/themes", { recursive: true });
 mkdirSync("/library/shared/references", { recursive: true });
 
 const server = createServer(handleRequest);
