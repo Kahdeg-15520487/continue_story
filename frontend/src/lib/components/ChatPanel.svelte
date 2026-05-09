@@ -81,7 +81,6 @@
     completedTools = [];
 
     if (mode === 'knowledge') {
-      // Ensure session exists
       if (!currentSessionId) {
         try {
           const info = await api.getKnowledgeChatSession();
@@ -194,11 +193,9 @@
       const { lastUserMessage: msg } = await api.getLastUserMessage(slug);
 
       if (!msg) { chatError = 'No previous message to retry'; return; }
-      // Remove the last assistant message if present
       if (messages.length > 0 && messages[messages.length - 1].role === 'assistant') {
         messages = messages.slice(0, -1);
       }
-      // Re-send
       messages = [...messages, { role: 'user', text: msg }];
       streaming = true;
       currentResponse = '';

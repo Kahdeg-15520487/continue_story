@@ -3,7 +3,7 @@ export interface ToolActivity {
   label: string;
 }
 
-/** Parse a chapter filename like "ch-003-the-beginning.md" into "Chapter 3: The Beginning" */
+// "ch-003-the-beginning.md" → "Chapter 3: The Beginning"
 function parseChapterName(path: string): string | null {
   const match = path.match(/ch-(\d+)(?:-(.+))?\.(?:md|scratch\.md)/);
   if (!match) return null;
@@ -14,7 +14,7 @@ function parseChapterName(path: string): string | null {
   return `Chapter ${num}: ${title}`;
 }
 
-/** Parse a wiki path like "wiki/characters/yuki-tanaka.md" into { category, name } */
+// "wiki/characters/yuki-tanaka.md" → { category, name }
 function parseWikiPath(path: string): { category: string; name: string } | null {
   const match = path.match(/wiki\/([^/]+)\/(.+)\.md$/);
   if (!match) return null;
@@ -23,7 +23,7 @@ function parseWikiPath(path: string): { category: string; name: string } | null 
   return { category, name };
 }
 
-/** Parse a KB path like "research/japanese-mythology.md" into { category, name } */
+// "research/japanese-mythology.md" → { category, name }
 function parseKbPath(path: string): { category: string; name: string } | null {
   const match = path.match(/^([^/]+)\/(.+)\.md$/);
   if (!match) return null;
@@ -32,7 +32,6 @@ function parseKbPath(path: string): { category: string; name: string } | null {
   return { category, name };
 }
 
-/** Parse a bash command into a human description */
 function parseBashCommand(cmd: string): string | null {
   // ls variants
   if (/^ls\b/.test(cmd)) {
@@ -48,11 +47,9 @@ function parseBashCommand(cmd: string): string | null {
   if (catMatch) return `Reading ${parseChapterName(catMatch[1]) ?? parseWikiPath(catMatch[1])?.name ?? catMatch[1]}`;
   // mkdir
   if (/^mkdir/.test(cmd)) return 'Creating directory';
-  // Default
   return 'Running command';
 }
 
-/** Extract domain from URL */
 function parseDomain(url: string): string {
   try {
     const u = new URL(url);
@@ -62,9 +59,8 @@ function parseDomain(url: string): string {
   }
 }
 
-/** Main function — translates a raw tool call into a user-facing activity description */
 export function describeToolActivity(name: string, args: any): ToolActivity {
-  const str = (v: any): string => typeof v === 'string' ? v : JSON.stringify(v) ?? '';
+  const str = (v: any): string => typeof v === 'string' ? v : JSON.stringify(v);
 
   switch (name) {
     case 'read': {
