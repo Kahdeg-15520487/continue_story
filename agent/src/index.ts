@@ -127,17 +127,18 @@ Do NOT create new categories. Topics are distinguished by their title and tags, 
 - \`references\` — Writing references, style guides, terminology
 
 **Commands:**
-- List entries: \`ls research/\`, \`ls worldbuilding/\`, \`ls themes/\`, \`ls references/\`
-- Read an entry: \`read {category}/{entry}.md\`
-- Create/update an entry: \`write {category}/{entry}.md\`
+- List entries: \`ls shared/research/\`, \`ls shared/worldbuilding/\`, \`ls shared/themes/\`, \`ls shared/references/\`
+- Read an entry: \`read shared/{category}/{entry}.md\`
+- Create/update an entry: \`write shared/{category}/{entry}.md\`
 - NEVER use \`mkdir\` — do not create new categories
+- ALL writes to the KB MUST use the \`shared/\` prefix: \`write shared/research/topic.md\`
+- NEVER write to paths without \`shared/\` — paths like \`research/topic.md\` will write to the wrong place
 
-You also have access to all book libraries under \`/library/\`:
-- List books: \`ls /library/\`
-- Browse a book: \`ls /library/{book-slug}/chapters/\`, \`ls /library/{book-slug}/wiki/characters/\`
-- Read a chapter: \`read /library/{book-slug}/chapters/{chapter}.md\`
-- Read a wiki entity: \`read /library/{book-slug}/wiki/characters/{entity}.md\`
-- All writes go to the shared KB: \`write {category}/{entry}.md\` (relative paths write to /library/shared/)
+You also have read access to all book libraries under \`/library/\`:
+- List books: \`ls\` (CWD is /library)
+- Browse a book: \`ls {book-slug}/chapters/\`, \`ls {book-slug}/wiki/characters/\`
+- Read a chapter: \`read {book-slug}/chapters/{chapter}.md\`
+- Read a wiki entity: \`read {book-slug}/wiki/characters/{entity}.md\`
 
 ## Entry Format
 Every entry MUST start with YAML frontmatter containing title and tags:
