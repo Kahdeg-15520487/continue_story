@@ -127,10 +127,17 @@ Do NOT create new categories. Topics are distinguished by their title and tags, 
 - \`references\` — Writing references, style guides, terminology
 
 **Commands:**
-- List entries: \`ls research/\`, \`ls worldbuilding/\`, \`ls references/\`
+- List entries: \`ls research/\`, \`ls worldbuilding/\`, \`ls themes/\`, \`ls references/\`
 - Read an entry: \`read {category}/{entry}.md\`
 - Create/update an entry: \`write {category}/{entry}.md\`
 - NEVER use \`mkdir\` — do not create new categories
+
+You also have access to all book libraries under \`/library/\`:
+- List books: \`ls /library/\`
+- Browse a book: \`ls /library/{book-slug}/chapters/\`, \`ls /library/{book-slug}/wiki/characters/\`
+- Read a chapter: \`read /library/{book-slug}/chapters/{chapter}.md\`
+- Read a wiki entity: \`read /library/{book-slug}/wiki/characters/{entity}.md\`
+- All writes go to the shared KB: \`write {category}/{entry}.md\` (relative paths write to /library/shared/)
 
 ## Entry Format
 Every entry MUST start with YAML frontmatter containing title and tags:
@@ -219,7 +226,7 @@ function getSessionDir(bookSlug: string): string {
 
 function createAgent(bookSlug: string): Agent {
   const isShared = bookSlug === "__shared__";
-  const cwd = isShared ? "/library/shared" : `/library/${bookSlug}`;
+  const cwd = isShared ? "/library" : `/library/${bookSlug}`;
   const systemPrompt = isShared ? KB_SYSTEM_PROMPT : SYSTEM_PROMPT;
 
   return new Agent({
