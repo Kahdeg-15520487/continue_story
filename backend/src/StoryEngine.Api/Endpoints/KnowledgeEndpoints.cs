@@ -15,12 +15,13 @@ public static class KnowledgeEndpoints
         Directory.CreateDirectory(Path.Combine(sharedDir, "worldbuilding"));
         Directory.CreateDirectory(Path.Combine(sharedDir, "references"));
 
-        // List all categories with their entries
+        // List all categories with their entries (parses frontmatter for tags)
         group.MapGet("/", (IConfiguration config) =>
         {
             var lib = config.GetValue<string>("Library:Path") ?? "/library";
             var shared = Path.Combine(lib, "shared");
             var categories = new List<object>();
+            var allTags = new HashSet<string>();
 
             if (Directory.Exists(shared))
             {
@@ -29,21 +30,64 @@ public static class KnowledgeEndpoints
                     var catName = Path.GetFileName(catDir);
                     var entries = Directory.GetFiles(catDir, "*.md")
                         .OrderBy(f => f)
-                        .Select(f =>
-                        {
-                            var content = File.ReadAllText(f);
-                            var title = content.Split('\n')
-                                .FirstOrDefault(l => l.StartsWith("# "))
-                                ?.Substring(2).Trim()
-                                ?? Path.GetFileNameWithoutExtension(f);
-                            return new { file = Path.GetFileName(f), title };
-                        })
-                        .ToList();
+                        .Select(f => ParseEntry(f))
+                        .Where(e => e != null)
+                        .ToList()!;
+                    foreach (var e in entries)
+                        foreach (var t in e.Tags)
+                            allTags.Add(t);
                     categories.Add(new { name = catName, entries });
                 }
             }
 
-            return Results.Ok(new { categories });
+            return Results.Ok(new { categories, tags = allTags.OrderBy(t => t).ToList() });
+        });
+
+        // Search entries by text or tags
+        group.MapGet("/search", ([FromQuery] string? q, [FromQuery] string? tags, IConfiguration config) =>
+        {
+            var lib = config.GetValue<string>("Library:Path") ?? "/library";
+            var shared = Path.Combine(lib, "shared");
+            var results = new List<object>();
+
+            var tagFilter = string.IsNullOrWhiteSpace(tags)
+                ? Array.Empty<string>()
+                : tags.Split(',').Select(t => t.Trim().ToLowerInvariant()).ToArray();
+
+            var textQuery = string.IsNullOrWhiteSpace(q) ? "" : q.Trim().ToLowerInvariant();
+
+            if (!Directory.Exists(shared))
+                return Results.Ok(new { results });
+
+            foreach (var catDir in Directory.GetDirectories(shared))
+            {
+                var catName = Path.GetFileName(catDir);
+                foreach (var filePath in Directory.GetFiles(catDir, "*.md"))
+                {
+                    var entry = ParseEntry(filePath);
+                    if (entry == null) continue;
+
+                    // Tag filter
+                    if (tagFilter.Length > 0)
+                    {
+                        var entryTagsLower = entry.Tags.Select(t => t.ToLowerInvariant()).ToHashSet();
+                        if (!tagFilter.All(tf => entryTagsLower.Contains(tf)))
+                            continue;
+                    }
+
+                    // Text search
+                    if (!string.IsNullOrEmpty(textQuery))
+                    {
+                        var searchable = $"{entry.Title} {string.Join(" ", entry.Tags)} {entry.Snippet}".ToLowerInvariant();
+                        if (!searchable.Contains(textQuery))
+                            continue;
+                    }
+
+                    results.Add(new { category = catName, entry.File, entry.Title, entry.Tags });
+                }
+            }
+
+            return Results.Ok(new { results });
         });
 
         // Get a single entry
@@ -115,6 +159,60 @@ public static class KnowledgeEndpoints
             return Results.Ok(new { deleted = true });
         });
     }
+
+    private static EntryInfo? ParseEntry(string filePath)
+    {
+        var content = File.ReadAllText(filePath);
+        var fileName = Path.GetFileName(filePath);
+        var title = "";
+        var tags = new List<string>();
+        var snippet = "";
+
+        // Parse YAML frontmatter
+        if (content.StartsWith("---"))
+        {
+            var end = content.IndexOf("\n---", 3, StringComparison.Ordinal);
+            if (end > 0)
+            {
+                var frontmatter = content[3..end].Trim();
+                foreach (var line in frontmatter.Split('\n'))
+                {
+                    if (line.StartsWith("title:"))
+                        title = line["title:".Length..].Trim().Trim('"', '\'');
+                    else if (line.StartsWith("tags:"))
+                    {
+                        var tagStr = line["tags:".Length..].Trim();
+                        if (tagStr.StartsWith('[') && tagStr.EndsWith(']'))
+                        {
+                            tagStr = tagStr[1..^1];
+                            tags = tagStr.Split(',')
+                                .Select(t => t.Trim().Trim('\'', '"'))
+                                .Where(t => t.Length > 0)
+                                .ToList();
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fallback title from H1
+        if (string.IsNullOrEmpty(title))
+            title = content.Split('\n')
+                .FirstOrDefault(l => l.StartsWith("# "))
+                ?["# ".Length..].Trim()
+                ?? Path.GetFileNameWithoutExtension(filePath);
+
+        // Snippet: first 200 chars of body (after frontmatter)
+        var bodyStart = content.StartsWith("---") ? content.IndexOf("\n---", 3) : 0;
+        if (bodyStart > 0) bodyStart = content.IndexOf('\n', bodyStart + 4);
+        if (bodyStart < 0) bodyStart = 0;
+        var body = content[bodyStart..].Trim();
+        snippet = body.Length > 200 ? body[..200] : body;
+
+        return new EntryInfo(fileName, title, tags, snippet);
+    }
+
+    private record EntryInfo(string File, string Title, List<string> Tags, string Snippet);
 }
 
 public record SaveKnowledgeEntryRequest(string Content);

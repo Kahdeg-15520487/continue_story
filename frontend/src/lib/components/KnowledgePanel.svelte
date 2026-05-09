@@ -3,18 +3,20 @@
   import { api } from '$lib/api';
   import { marked } from 'marked';
 
-  interface KBEntry { file: string; title: string; }
+  interface KBEntry { file: string; title: string; tags: string[]; }
   interface KBCategory { name: string; entries: KBEntry[]; }
 
   let categories = $state<KBCategory[]>([]);
+  let allTags = $state<string[]>([]);
+  let selectedTags = $state<string[]>([]);
+  let searchQuery = $state('');
+  let searchResults = $state<Array<{ category: string; file: string; title: string; tags: string[] }> | null>(null);
   let selectedCategory = $state<string | null>(null);
   let selectedEntry = $state<string | null>(null);
   let entryContent = $state('');
   let loading = $state(true);
   let editing = $state(false);
   let editContent = $state('');
-  let newCategoryName = $state('');
-  let showNewCategory = $state(false);
   let showNewEntry = $state(false);
   let newEntryName = $state('');
 
@@ -22,12 +24,46 @@
     try {
       const data = await api.getKnowledgeIndex();
       categories = data.categories;
+      allTags = data.tags;
     } catch (err) {
       console.error('Failed to load KB index:', err);
     } finally {
       loading = false;
     }
   }
+
+  async function doSearch() {
+    const q = searchQuery.trim();
+    const tags = selectedTags.length > 0 ? selectedTags : undefined;
+    if (!q && !tags) {
+      searchResults = null;
+      return;
+    }
+    try {
+      const data = await api.searchKnowledge(q || undefined, tags);
+      searchResults = data.results;
+    } catch (err) {
+      console.error('Search failed:', err);
+    }
+  }
+
+  function toggleTag(tag: string) {
+    if (selectedTags.includes(tag)) {
+      selectedTags = selectedTags.filter(t => t !== tag);
+    } else {
+      selectedTags = [...selectedTags, tag];
+    }
+    doSearch();
+  }
+
+  let filteredCategories = $derived.by(() => {
+    if (searchResults !== null) return null; // search mode
+    if (selectedTags.length === 0) return categories;
+    return categories.map(cat => ({
+      ...cat,
+      entries: cat.entries.filter(e => selectedTags.some(t => e.tags.map(x => x.toLowerCase()).includes(t.toLowerCase()))),
+    })).filter(cat => cat.entries.length > 0);
+  });
 
   async function selectEntry(category: string, file: string) {
     selectedCategory = category;
@@ -58,24 +94,12 @@
     }
   }
 
-  async function createCategory() {
-    if (!newCategoryName.trim()) return;
-    try {
-      await api.createKnowledgeCategory(newCategoryName.trim());
-      newCategoryName = '';
-      showNewCategory = false;
-      await loadIndex();
-    } catch (err) {
-      console.error('Failed to create category:', err);
-    }
-  }
-
   async function createEntry() {
     if (!selectedCategory || !newEntryName.trim()) return;
     const name = newEntryName.trim().endsWith('.md') ? newEntryName.trim() : newEntryName.trim() + '.md';
     const title = name.replace('.md', '');
     try {
-      await api.saveKnowledgeEntry(selectedCategory, name, `# ${title}\n\n`);
+      await api.saveKnowledgeEntry(selectedCategory, name, `---\ntitle: ${title}\ntags: []\n---\n\n# ${title}\n\n`);
       newEntryName = '';
       showNewEntry = false;
       await loadIndex();
@@ -114,6 +138,12 @@
     }
   }
 
+  function clearSearch() {
+    searchQuery = '';
+    selectedTags = [];
+    searchResults = null;
+  }
+
   let renderedHtml = $derived(entryContent ? marked.parse(entryContent, { async: false }) as string : '');
 
   onMount(loadIndex);
@@ -124,17 +154,33 @@
     <div class="kb-sidebar-header">
       <h3>Knowledge Base</h3>
       <div class="kb-actions">
-        <button onclick={() => showNewCategory = !showNewCategory} title="New category">📁+</button>
         <button onclick={() => showNewEntry = !showNewEntry} title="New entry" disabled={!selectedCategory}>📄+</button>
         <button onclick={loadIndex} title="Refresh">🔄</button>
       </div>
     </div>
 
-    {#if showNewCategory}
-      <div class="kb-new-form">
-        <input type="text" bind:value={newCategoryName} placeholder="Category name" onkeydown={(e) => e.key === 'Enter' && createCategory()} />
-        <button onclick={createCategory}>Create</button>
-        <button onclick={() => showNewCategory = false}>✕</button>
+    <div class="kb-search">
+      <input
+        type="text"
+        bind:value={searchQuery}
+        placeholder="Search entries..."
+        oninput={() => doSearch()}
+        onkeydown={(e) => e.key === 'Escape' && clearSearch()}
+      />
+      {#if searchQuery || selectedTags.length > 0}
+        <button class="kb-clear-search" onclick={clearSearch}>✕</button>
+      {/if}
+    </div>
+
+    {#if allTags.length > 0}
+      <div class="kb-tags">
+        {#each allTags as tag}
+          <button
+            class="kb-tag"
+            class:active={selectedTags.includes(tag)}
+            onclick={() => toggleTag(tag)}
+          >{tag}</button>
+        {/each}
       </div>
     {/if}
 
@@ -148,30 +194,55 @@
 
     {#if loading}
       <div class="kb-loading">Loading...</div>
-    {:else if categories.length === 0}
-      <div class="kb-empty">No entries yet. Ask the assistant to research something!</div>
-    {:else}
-      {#each categories as cat}
+    {:else if searchResults !== null}
+      {#if searchResults.length === 0}
+        <div class="kb-empty">No results found.</div>
+      {:else}
         <div class="kb-category">
-          <div class="kb-category-header">
-            <span class="kb-category-name">📂 {cat.name}</span>
-            <button class="kb-delete-btn" onclick={() => deleteCategory(cat.name)} title="Delete category">🗑</button>
-          </div>
-          {#each cat.entries as entry}
+          <div class="kb-category-header">Search Results ({searchResults.length})</div>
+          {#each searchResults as r}
             <div
               class="kb-entry"
-              class:active={selectedCategory === cat.name && selectedEntry === entry.file}
+              class:active={selectedCategory === r.category && selectedEntry === r.file}
               role="button"
               tabindex="0"
-              onclick={() => selectEntry(cat.name, entry.file)}
-              onkeydown={(e) => e.key === 'Enter' && selectEntry(cat.name, entry.file)}
+              onclick={() => selectEntry(r.category, r.file)}
+              onkeydown={(e) => e.key === 'Enter' && selectEntry(r.category, r.file)}
             >
-              <span>📄 {entry.title}</span>
-              <button class="kb-delete-btn" onclick={(e) => { e.stopPropagation(); deleteEntry(cat.name, entry.file); }}>×</button>
+              <span>📄 {r.title}</span>
+              <span class="kb-entry-category">{r.category}</span>
             </div>
           {/each}
         </div>
-      {/each}
+      {/if}
+    {:else if filteredCategories}
+      {#if filteredCategories.reduce((sum, cat) => sum + cat.entries.length, 0) === 0}
+        <div class="kb-empty">No entries yet. Ask the assistant to research something!</div>
+      {:else}
+        {#each filteredCategories as cat}
+          {#if cat.entries.length > 0}
+            <div class="kb-category">
+              <div class="kb-category-header">
+                <span class="kb-category-name">📂 {cat.name}</span>
+                <button class="kb-delete-btn" onclick={() => deleteCategory(cat.name)} title="Delete category">🗑</button>
+              </div>
+              {#each cat.entries as entry}
+                <div
+                  class="kb-entry"
+                  class:active={selectedCategory === cat.name && selectedEntry === entry.file}
+                  role="button"
+                  tabindex="0"
+                  onclick={() => selectEntry(cat.name, entry.file)}
+                  onkeydown={(e) => e.key === 'Enter' && selectEntry(cat.name, entry.file)}
+                >
+                  <span>📄 {entry.title}</span>
+                  <button class="kb-delete-btn" onclick={(e) => { e.stopPropagation(); deleteEntry(cat.name, entry.file); }}>×</button>
+                </div>
+              {/each}
+            </div>
+          {/if}
+        {/each}
+      {/if}
     {/if}
   </div>
 
@@ -221,6 +292,77 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+  }
+
+  .kb-search {
+    display: flex;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border, #30363d);
+    gap: 4px;
+  }
+
+  .kb-search input {
+    flex: 1;
+    padding: 6px 8px;
+    background: var(--bg-tertiary, #21262d);
+    border: 1px solid var(--border, #30363d);
+    border-radius: 4px;
+    color: var(--text-primary, #c9d1d9);
+    font-size: 12px;
+    outline: none;
+  }
+
+  .kb-search input:focus {
+    border-color: var(--accent, #6366f1);
+  }
+
+  .kb-clear-search {
+    background: none;
+    border: none;
+    color: var(--text-secondary, #8b949e);
+    cursor: pointer;
+    font-size: 12px;
+    padding: 4px;
+  }
+
+  .kb-clear-search:hover {
+    color: var(--text-primary, #c9d1d9);
+  }
+
+  .kb-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--border, #30363d);
+  }
+
+  .kb-tag {
+    padding: 2px 8px;
+    background: var(--bg-tertiary, #21262d);
+    border: 1px solid var(--border, #30363d);
+    border-radius: 12px;
+    color: var(--text-secondary, #8b949e);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .kb-tag:hover {
+    border-color: var(--accent, #6366f1);
+    color: var(--text-primary, #c9d1d9);
+  }
+
+  .kb-tag.active {
+    background: var(--accent, #6366f1);
+    border-color: var(--accent, #6366f1);
+    color: white;
+  }
+
+  .kb-entry-category {
+    font-size: 10px;
+    color: var(--text-secondary, #8b949e);
+    opacity: 0.6;
   }
 
   .kb-sidebar-header h3 {

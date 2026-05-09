@@ -2,6 +2,14 @@ import type { BookSummary, BookDetail, BookContent, CreateBookRequest, WikiIndex
 
 const BASE = '/api';
 
+function buildSearchParams(q?: string, tags?: string[]): string {
+  const params = new URLSearchParams();
+  if (q) params.set('q', q);
+  if (tags && tags.length > 0) params.set('tags', tags.join(','));
+  const str = params.toString();
+  return str ? `?${str}` : '';
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     headers: { 'Content-Type': 'application/json' },
@@ -314,7 +322,7 @@ export const api = {
   // ── Knowledge Base ──────────────────────────────────────────────
 
   getKnowledgeIndex: () =>
-    request<{ categories: Array<{ name: string; entries: Array<{ file: string; title: string }> }> }>('/knowledge'),
+    request<{ categories: Array<{ name: string; entries: Array<{ file: string; title: string; tags: string[] }> }>; tags: string[] }>('/knowledge'),
 
   getKnowledgeEntry: (category: string, entry: string) =>
     request<{ file: string; content: string }>(`/knowledge/${encodeURIComponent(category)}/${encodeURIComponent(entry)}`),
@@ -340,6 +348,9 @@ export const api = {
     request<{ deleted: boolean }>(`/knowledge/${encodeURIComponent(category)}`, {
       method: 'DELETE',
     }),
+
+  searchKnowledge: (query?: string, tags?: string[]) =>
+    request<{ results: Array<{ category: string; file: string; title: string; tags: string[] }> }>(`/knowledge/search${buildSearchParams(query, tags)}`),
 
   getKnowledgeChatSession: () =>
     request<{ sessionId: string; bookSlug: string; messageCount: number }>('/knowledge/chat/session'),
