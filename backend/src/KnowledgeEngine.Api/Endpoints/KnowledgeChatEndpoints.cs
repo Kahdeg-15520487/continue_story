@@ -48,7 +48,11 @@ public static class KnowledgeChatEndpoints
         {
             var sessionId = req.SessionId;
             if (string.IsNullOrEmpty(sessionId))
-                return Results.BadRequest(new { error = "SessionId required" });
+            {
+                ctx.Response.StatusCode = 400;
+                await ctx.Response.WriteAsJsonAsync(new { error = "SessionId required" }, ctx.RequestAborted);
+                return;
+            }
 
             var message = req.Message;
 
@@ -64,8 +68,6 @@ public static class KnowledgeChatEndpoints
                 await ctx.Response.WriteAsync($"data: { JsonSerializer.Serialize(evt) }\n\n");
                 await ctx.Response.Body.FlushAsync();
             }
-
-            return Results.Ok();
         });
 
         // Abort
