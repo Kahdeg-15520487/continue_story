@@ -49,6 +49,15 @@ You have full file read/write access via your tools.
 - Update entity: \`write wiki/characters/{name}.md\`
 - Plot summary: \`read wiki/summary.md\`
 
+**Shared Knowledge Base:**
+A shared research library at \`/library/shared/\` with pre-researched topics available to all stories.
+- List categories: \`ls /library/shared/\`
+- List entries: \`ls /library/shared/research/\`, \`ls /library/shared/worldbuilding/\`, \`ls /library/shared/themes/\`, \`ls /library/shared/references/\`
+- Read an entry: \`read /library/shared/research/valorant-agents.md\`
+- Search entries: \`grep -rl "search term" /library/shared/\`
+- ALWAYS check the shared KB first before doing web searches — it may already have what you need
+- NEVER write to the shared KB — it is read-only for story agents
+
 ## Guidelines
 - Use tools to fetch more details when needed — don't guess from memory alone
 - Maintain consistency with established story elements
