@@ -38,8 +38,7 @@ public static class ChatEndpoints
             var chaptersDir = Path.Combine(libraryPath, req.BookSlug, "chapters");
 
             // ── Build lightweight context hint ─────────────────────────────
-            // The agent has read/write tools and can fetch content on-demand.
-            // We only provide metadata so it knows what exists.
+            // Agent has read/write tools — only provide metadata so it knows what exists.
             var storyTitle = book?.Title ?? req.BookSlug;
             var storyAuthor = book?.Author ?? "Unknown";
             var chapterCount = 0;
@@ -78,7 +77,6 @@ public static class ChatEndpoints
 
             if (!string.IsNullOrEmpty(req.SessionId))
             {
-                // Verify the session still exists on the agent
                 try
                 {
                     await agentService.GetSessionInfoAsync(req.SessionId, ct);
@@ -86,7 +84,6 @@ public static class ChatEndpoints
                 }
                 catch
                 {
-                    // Session gone (agent restarted), create a new one
                     sessionId = await agentService.EnsureSessionAsync(req.BookSlug, ct);
                 }
             }
@@ -95,8 +92,7 @@ public static class ChatEndpoints
                 sessionId = await agentService.EnsureSessionAsync(req.BookSlug, ct);
             }
 
-            // No SendPromptAsync here — system prompt is baked into the agent session via appendSystemPrompt.
-            // The agent reads chapters/wiki on-demand using its file tools.
+            // System prompt is baked into the agent session; agent reads chapters/wiki on-demand.
 
             // ── Save user message ──────────────────────────────────────────
             if (book is not null)
@@ -113,7 +109,6 @@ public static class ChatEndpoints
             }
 
             // ── Stream response ────────────────────────────────────────────
-            // Prepend context hint to the user message so the agent knows what's available
             var messageWithHint = contextHint.ToString() + req.Message;
             var assistantText = "";
             var streamSessionId = sessionId;
@@ -153,7 +148,6 @@ public static class ChatEndpoints
             // ── Check for scratch files or direct edits ────────────────────
             if (Directory.Exists(chaptersDir))
             {
-                // Check for scratch files for ANY chapter
                 foreach (var scratchFile in Directory.GetFiles(chaptersDir, "*.scratch.md"))
                 {
                     var chapterId = Path.GetFileName(scratchFile).Replace(".scratch.md", "");

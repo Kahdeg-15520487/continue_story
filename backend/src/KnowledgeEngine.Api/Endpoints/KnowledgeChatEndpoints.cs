@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.Json;
 using KnowledgeEngine.Api.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -56,7 +55,6 @@ public static class KnowledgeChatEndpoints
 
             var message = req.Message;
 
-            // Build lightweight context hint
             var contextHint = $"[Context: Shared Knowledge Base. Use `ls`, `read`, `write` to manage entries. Categories are directories under the working directory. Entries are markdown files.]\n\n";
 
             ctx.Response.Headers["Content-Type"] = "text/event-stream";

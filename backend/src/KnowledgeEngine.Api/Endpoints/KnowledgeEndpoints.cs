@@ -1,4 +1,3 @@
-using System.Text;
 using Microsoft.AspNetCore.Mvc;
 
 namespace KnowledgeEngine.Api.Endpoints;
@@ -9,7 +8,6 @@ public static class KnowledgeEndpoints
     {
         var group = app.MapGroup("/api/knowledge");
 
-        // Ensure shared directory exists
         var libraryPath = app.Configuration.GetValue<string>("Library:Path") ?? "/library";
         var sharedDir = Path.Combine(libraryPath, "shared");
         Directory.CreateDirectory(sharedDir);

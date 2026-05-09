@@ -24,7 +24,6 @@ public static class ChatHistoryEndpoints
             var query = db.ChatMessages
                 .Where(m => m.BookId == book.Id);
 
-            // Filter by sessionId if provided
             var sessionId = context.Request.Query.ContainsKey("sessionId")
                 ? context.Request.Query["sessionId"].ToString()
                 : null;
@@ -76,7 +75,6 @@ public static class ChatHistoryEndpoints
             if (book is null)
                 return Results.NotFound(new { error = "Book not found" });
 
-            // Kill agent session if we have one
             var sessionId = context.Request.Query.ContainsKey("sessionId")
                 ? context.Request.Query["sessionId"].ToString()
                 : null;

@@ -170,10 +170,6 @@ function getSessionDir(bookSlug: string): string {
   return `/home/node/.pi-sessions/${bookSlug}`;
 }
 
-function buildTools(cwd: string): AgentTool[] {
-  return [...createCodingTools(cwd), webSearchTool, webFetchTool];
-}
-
 function createAgent(bookSlug: string): Agent {
   const isShared = bookSlug === "__shared__";
   const cwd = isShared ? "/library/shared" : `/library/${bookSlug}`;
@@ -184,7 +180,7 @@ function createAgent(bookSlug: string): Agent {
       systemPrompt,
       model,
       thinkingLevel: "off",
-      tools: buildTools(cwd),
+      tools: [...createCodingTools(cwd), webSearchTool, webFetchTool],
     },
     streamFn: streamSimpleOpenAICompletions,
     convertToLlm: (messages) => messages as any[],
@@ -440,6 +436,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
     res.end(JSON.stringify({
       sessionId: managed.id,
       bookSlug: managed.bookSlug,
+      mode: "read",
       messageCount: managed.agent.state.messages.length,
       lastActivity: new Date(managed.lastActivity).toISOString(),
       tokenBudget: { used: managed.tokenCount, limit: 100_000 },
