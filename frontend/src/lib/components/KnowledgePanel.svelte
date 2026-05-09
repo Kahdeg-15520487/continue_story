@@ -70,7 +70,7 @@
     return categories.map(cat => ({
       ...cat,
       entries: cat.entries.filter(e => selectedTags.some(t => e.tags.map(x => x.toLowerCase()).includes(t.toLowerCase()))),
-    })).filter(cat => cat.entries.length > 0);
+    })).filter(cat => cat.entries.length > 0 || true); // always show categories
   });
 
   async function selectEntry(category: string, file: string) {
@@ -262,6 +262,13 @@
                   <button class="kb-delete-btn" onclick={(e) => { e.stopPropagation(); deleteEntry(cat.name, entry.file); }}>×</button>
                 </div>
               {/each}
+            </div>
+          {:else}
+            <div class="kb-category">
+              <div class="kb-category-header">
+                <span class="kb-category-name">📂 {cat.name}</span>
+              </div>
+              <div class="kb-empty-cat">No entries yet</div>
             </div>
           {/if}
         {/each}
@@ -540,6 +547,14 @@
   .kb-delete-btn:hover {
     opacity: 1;
     color: #f97583;
+  }
+
+  .kb-empty-cat {
+    padding: 6px 24px;
+    color: var(--text-secondary, #8b949e);
+    font-size: 11px;
+    opacity: 0.5;
+    font-style: italic;
   }
 
   .kb-content {
