@@ -56,7 +56,10 @@ A shared research library at \`/library/shared/\` with pre-researched topics ava
 - Read an entry: \`read /library/shared/research/valorant-agents.md\`
 - Search entries: \`grep -rl "search term" /library/shared/\`
 - ALWAYS check the shared KB first before doing web searches — it may already have what you need
-- NEVER write to the shared KB — it is read-only for story agents
+- You CAN add or update shared KB entries: \`write /library/shared/{category}/{entry}.md\`
+- When you research something for a story, consider saving it to the shared KB for other story agents to benefit
+- Follow the KB format: YAML frontmatter with title + tags, then markdown content
+- Tags use the namespaced convention: \`{topic}:{specific}\` (e.g. \`valorant:agents\`, \`mythology:yokai\`)
 
 ## Guidelines
 - Use tools to fetch more details when needed — don't guess from memory alone

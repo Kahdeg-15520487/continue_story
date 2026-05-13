@@ -285,7 +285,7 @@
           <button onclick={saveEdit}>💾 Save</button>
           <button onclick={() => editing = false}>Cancel</button>
         </div>
-        <textarea bind:value={editContent} />
+        <textarea bind:value={editContent}></textarea>
       </div>
     {:else}
       <div class="kb-viewer">
