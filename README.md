@@ -7,17 +7,17 @@ Built with a Svelte 5 frontend, a .NET 8 API backend, and a Node.js AI agent pow
 ## Architecture
 
 ```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+┌──────────────┐     ┌─────────────┐     ┌─────────────┐
 │  Frontend    │────▶│  API (.NET) │────▶│  Agent      │
 │  Svelte 5    │◀────│  Port 5000  │◀────│  Port 3001  │
 │  Port 5173   │     │             │     │  (LLM)      │
-└─────────────┘     └──────┬──────┘     └─────────────┘
-                           │
-                    ┌──────┴──────┐
-                    │  SQLite DB  │
-                    │  (Hangfire  │
-                    │   + App)    │
-                    └─────────────┘
+└──────────────┘     └──────┬──────┘     └─────────────┘
+                            │
+                     ┌──────┴──────┐
+                     │  SQLite DB  │
+                     │  (Hangfire  │
+                     │   + App)    │
+                     └─────────────┘
 ```
 
 - **Frontend** — Svelte 5 + Vite. Book reader/editor, chat panel, wiki manager, knowledge base.
