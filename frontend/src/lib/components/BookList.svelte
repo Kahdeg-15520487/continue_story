@@ -4,6 +4,9 @@
 
   let { books = $bindable([]), }: { books: BookSummary[] } = $props();
 
+  type SortMode = 'modified' | 'abc';
+  let sortMode: SortMode = $state('modified');
+
   function statusIcon(status: string): string {
     switch (status) {
       case 'ready': return '✅';
@@ -12,6 +15,20 @@
       default: return '📄';
     }
   }
+
+  function toggleSort() {
+    sortMode = sortMode === 'modified' ? 'abc' : 'modified';
+  }
+
+  let sortedBooks = $derived.by(() => {
+    const copy = [...books];
+    if (sortMode === 'abc') {
+      copy.sort((a, b) => a.title.localeCompare(b.title));
+    } else {
+      copy.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    }
+    return copy;
+  });
 
   async function deleteBook(slug: string, e: MouseEvent) {
     e.preventDefault();
@@ -27,10 +44,21 @@
 </script>
 
 <div class="book-list">
-  {#if books.length === 0}
+  <div class="sort-bar">
+    <button class="sort-btn" onclick={toggleSort} title="Switch sort order">
+      {#if sortMode === 'modified'}
+        <span class="sort-label">🕐 Last Modified</span>
+      {:else}
+        <span class="sort-label">🔤 A–Z</span>
+      {/if}
+      <span class="sort-arrow">⇄</span>
+    </button>
+  </div>
+
+  {#if sortedBooks.length === 0}
     <p class="empty">No books yet. Create one to get started.</p>
   {:else}
-    {#each books as book (book.slug)}
+    {#each sortedBooks as book (book.slug)}
       <a href="/books/{book.slug}" class="book-item">
         <span class="status-icon">{statusIcon(book.status)}</span>
         <div class="book-info">
@@ -50,6 +78,40 @@
     flex: 1;
     overflow-y: auto;
     padding: 8px;
+  }
+
+  .sort-bar {
+    padding: 4px 8px 6px;
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .sort-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    font-size: 12px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: border-color 0.2s, color 0.2s;
+  }
+
+  .sort-btn:hover {
+    border-color: var(--accent);
+    color: var(--text-primary);
+  }
+
+  .sort-label {
+    white-space: nowrap;
+  }
+
+  .sort-arrow {
+    font-size: 11px;
+    opacity: 0.6;
   }
 
   .empty {

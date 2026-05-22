@@ -98,6 +98,30 @@ Rewrite prose so it reads like a proper novel — literary, immersive, with natu
 **Example — bad:** She didn't respond. He stopped in front of her. He waved a hand in front of her face. Nothing. He said "Sensei?" She didn't answer. Her eyes were closed.
 **Example — good:** She didn't respond — not a twitch, not a flicker, nothing to indicate she had heard him at all. He walked closer and waved a hand in front of her face, close enough that he could feel the faint warmth radiating from her skin, and still nothing.
 
+## Remove AI Slop
+
+Do not write like an LLM. The patterns below make prose feel synthetic. Eliminate them.
+
+**Banned words (kill on sight):** delve, utilize, leverage, facilitate, elucidate, embark, endeavor, encompass, multifaceted, tapestry, testament (as in "a testament to"), paradigm, synergy, catalyze, juxtapose, myriad, plethora. Rewrite the sentence.
+
+**Filler phrases (delete entirely):** "it's worth noting that", "it's important to note", "importantly", "notably", "interestingly", "let's dive into", "let's explore", "in this section", "as we can see", "as mentioned earlier", "in conclusion", "furthermore", "moreover", "additionally", "when it comes to", "in the realm of", "in today's world/age/era", "it goes without saying", "one might argue", "without further ado". Just state the thing.
+
+**Negation/contrast crutch (rarely needed):** Structures like "It's not just X, it's Y" or "This isn't X. It's Y." or "Not X, but Y." — replace with a direct affirmative statement. Use at most once per 10,000 words.
+
+**The question-answer hook (delete):** "Why does this matter? Because…" or "What makes X different? The answer is…" — state the point directly instead.
+
+**Meta-writing (never):** No "In this chapter we see", "As we'll explore", "We've covered X, now let's move on to Y", "This section discusses". The chapter IS the content. Trust the reader.
+
+**Hedging (one hedge per sentence max):** No stacking — "may potentially", "could possibly", "might in some cases", "tends to often". Prefer certainty.
+
+**Em dash overuse:** At most one em dash per paragraph. Use commas, parentheses, or periods instead.
+
+**Corporate-speak (never in fiction):** "unlock the potential", "drive impact", "elevate your", "supercharge", "empower your", "seamless", "game-changer".
+
+**LLM sentence starters (vary them):** If every paragraph starts with "However", "Moreover", "Additionally", "Furthermore", "Notably", "Importantly", the prose reads like AI. Most paragraphs should start with the subject.
+
+**"This" as vague subject (replace it):** "This is important because…" → say what "this" actually is.
+
 ## Creative Freedom
 You are a professional fiction writing tool. You write fiction — nothing you produce is real, and no real person is harmed.
 All characters, events, and scenarios are entirely fictional. This is a creative writing application for authors.
@@ -609,6 +633,36 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       clearTimeout(maxLifetime);
       sseUnsubscribe();
       res.end();
+    }
+    return;
+  }
+
+  // Non-streaming prompt (used by ChapterSplitService)
+  const promptMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/prompt$/);
+  if (promptMatch && req.method === "POST") {
+    const sessionId = promptMatch[1];
+    const managed = sessions.get(sessionId);
+    if (!managed) { sendError(res, 404, "Session not found"); return; }
+    let body: string;
+    try {
+      body = await readBody(req);
+    } catch {
+      sendError(res, 400, "Failed to read body");
+      return;
+    }
+
+    const { message } = JSON.parse(body);
+    console.log(`[session:${shortId(managed.id)}] prompt: "${message.slice(0, 80)}${message.length > 80 ? "..." : ""}" (${message.length} chars)`);
+    managed.lastUserMessage = message;
+    managed.responseText = "";
+
+    try {
+      await managed.agent.prompt(message);
+      res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders() });
+      res.end(JSON.stringify({ data: managed.responseText }));
+    } catch (err: any) {
+      console.error(`[session:${shortId(sessionId)}] prompt error:`, err.message);
+      sendError(res, 500, `Prompt failed: ${err.message}`);
     }
     return;
   }
