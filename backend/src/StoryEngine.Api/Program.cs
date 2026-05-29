@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using StoryEngine.Api.Data;
 using StoryEngine.Api.Endpoints;
 using StoryEngine.Api.Services;
+using Microsoft.Extensions.Logging;
 
 [assembly: InternalsVisibleTo("StoryEngine.Api.Tests")]
 
@@ -70,6 +71,10 @@ app.UseCors("Frontend");
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }));
 
+// ── Import staging: extract uploaded backup before DB init ──────────
+var exportLogger = app.Services.GetRequiredService<ILogger<Program>>();
+ExportEndpoints.ApplyStagedImport(app.Configuration, exportLogger);
+
 LibraryEndpoints.Map(app);
 EditorEndpoints.Map(app);
 ConversionEndpoints.Map(app);
@@ -82,6 +87,7 @@ ChapterEndpoints.Map(app);
 InlineEditEndpoints.Map(app);
 KnowledgeEndpoints.Map(app);
 KnowledgeChatEndpoints.Map(app);
+ExportEndpoints.Map(app);
 
 if (!app.Environment.IsEnvironment("Testing"))
 {

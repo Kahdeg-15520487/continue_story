@@ -157,6 +157,44 @@ docker-compose up -d agent
 docker-compose exec api dotnet test
 ```
 
+## Export / Import
+
+Migrate all stories and data between instances.
+
+**Export (downloads a single `.tar.gz`):**
+
+```bash
+curl -o backup.tar.gz http://localhost:5000/api/export
+```
+
+Contains: all chapters, wiki, original books, shared knowledge base, chat history, book metadata.
+
+**Import (upload to the target instance):**
+
+```bash
+curl -X POST http://<server>:5000/api/import -F "file=@backup.tar.gz"
+# Then restart the API container to apply:
+docker-compose restart api
+```
+
+The import is staged and applied automatically on the next container startup.
+
+**Manual migration** (if you prefer direct volume copying):
+
+```bash
+# Export from source
+docker run --rm -v continue_story_4_library-data:/lib -v $(pwd):/out alpine \
+  tar czf /out/library.tar.gz -C /lib .
+docker run --rm -v continue_story_4_sqlite-data:/data -v $(pwd):/out alpine \
+  tar czf /out/sqlite.tar.gz -C /data .
+
+# Import to target (after tarballs are copied)
+docker run --rm -v continue_story_4_library-data:/lib -v $(pwd):/in alpine \
+  sh -c "cd /lib && tar xzf /in/library.tar.gz"
+docker run --rm -v continue_story_4_sqlite-data:/data -v $(pwd):/in alpine \
+  sh -c "cd /data && tar xzf /in/sqlite.tar.gz"
+```
+
 ## License
 
 Private project.
