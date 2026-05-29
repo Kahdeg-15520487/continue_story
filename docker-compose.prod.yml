@@ -1,0 +1,24 @@
+# Production override — use pre-built GHCR images instead of local builds.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+services:
+  api:
+    # Override local build with GHCR image
+    build: !reset null
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+
+  frontend:
+    # Override local dev build with production image
+    build: !reset null
+    # Production serves on port 3000 via Node, not Vite dev on 5173
+    ports:
+      - "3000:3000"
+    # No source mounts in production
+    volumes: !reset []
+
+  agent:
+    build: !reset null
