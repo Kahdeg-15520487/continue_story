@@ -1,5 +1,14 @@
+# Development (default): builds images from local Dockerfiles
+#   docker compose up -d
+#
+# Production: pull pre-built images from GHCR
+#   1. Comment out all `build:` blocks below
+#   2. For frontend, comment out `target: dev` and the `volumes:` block
+#   3. docker compose pull && docker compose up -d
+
 services:
   api:
+    image: ghcr.io/kahdeg-15520487/story-engine-api:latest
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -21,14 +30,19 @@ services:
         condition: service_started
 
   frontend:
+    image: ghcr.io/kahdeg-15520487/story-engine-frontend:latest
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      # prod: switch target to `production` and remove volumes below
       target: dev
     ports:
+      # dev: Vite HMR on 5173 — prod: Node server on 3000, change to "3000:3000"
       - "5173:5173"
     environment:
+      # dev only — prod build bakes the proxy at build time, not needed
       - API_PROXY_TARGET=http://api:5000
+    # dev only — source mounts for hot reload. Comment out for production.
     volumes:
       - ./frontend/src:/app/src
       - ./frontend/static:/app/static
@@ -40,6 +54,7 @@ services:
         condition: service_started
 
   agent:
+    image: ghcr.io/kahdeg-15520487/story-engine-agent:latest
     build:
       context: ./agent
       dockerfile: Dockerfile
@@ -74,7 +89,6 @@ services:
       - SEARXNG_BASE_URL=http://searxng:8080/
     volumes:
       - ./searxng/config:/etc/searxng:ro
-    # No port exposure needed — only agent container accesses it
 
 volumes:
   library-data:
