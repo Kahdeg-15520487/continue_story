@@ -1,0 +1,62 @@
+name: Build and Publish Docker Images
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+
+env:
+  REGISTRY: ghcr.io
+  API_IMAGE: ghcr.io/${{ github.repository_owner }}/story-engine-api
+  AGENT_IMAGE: ghcr.io/${{ github.repository_owner }}/story-engine-agent
+  FRONTEND_IMAGE: ghcr.io/${{ github.repository_owner }}/story-engine-frontend
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        run: docker buildx create --use
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Extract metadata
+        id: meta
+        run: |
+          SHA="$(git rev-parse --short HEAD)"
+          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "version=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and push API
+        run: |
+          TAGS="--tag ${{ env.API_IMAGE }}:latest --tag ${{ env.API_IMAGE }}:${{ steps.meta.outputs.sha }}"
+          if [ -n "${{ steps.meta.outputs.version }}" ]; then
+            TAGS="$TAGS --tag ${{ env.API_IMAGE }}:${{ steps.meta.outputs.version }}"
+          fi
+          docker buildx build --file backend/Dockerfile --platform linux/amd64 $TAGS --push ./backend
+
+      - name: Build and push Agent
+        run: |
+          TAGS="--tag ${{ env.AGENT_IMAGE }}:latest --tag ${{ env.AGENT_IMAGE }}:${{ steps.meta.outputs.sha }}"
+          if [ -n "${{ steps.meta.outputs.version }}" ]; then
+            TAGS="$TAGS --tag ${{ env.AGENT_IMAGE }}:${{ steps.meta.outputs.version }}"
+          fi
+          docker buildx build --file agent/Dockerfile --platform linux/amd64 $TAGS --push ./agent
+
+      - name: Build and push Frontend
+        run: |
+          TAGS="--tag ${{ env.FRONTEND_IMAGE }}:latest --tag ${{ env.FRONTEND_IMAGE }}:${{ steps.meta.outputs.sha }}"
+          if [ -n "${{ steps.meta.outputs.version }}" ]; then
+            TAGS="$TAGS --tag ${{ env.FRONTEND_IMAGE }}:${{ steps.meta.outputs.version }}"
+          fi
+          docker buildx build --file frontend/Dockerfile --target production --platform linux/amd64 $TAGS --push ./frontend
