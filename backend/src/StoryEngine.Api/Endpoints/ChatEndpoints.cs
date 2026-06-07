@@ -41,12 +41,26 @@ public static class ChatEndpoints
             // Agent has read/write tools — only provide metadata so it knows what exists.
             var storyTitle = book?.Title ?? req.BookSlug;
             var storyAuthor = book?.Author ?? "Unknown";
-            var chapterCount = 0;
-            var characterCount = 0;
-            var locationCount = 0;
+
+            // ── Build rich context: chapter titles, characters, locations, summary ──
+            var chapterTitles = new List<string>();
+            var characterNames = new List<string>();
+            var locationNames = new List<string>();
+            var plotSummary = "";
 
             if (Directory.Exists(chaptersDir))
-                chapterCount = Directory.GetFiles(chaptersDir, "ch-*.md").Count(f => !f.EndsWith(".scratch.md"));
+            {
+                foreach (var f in Directory.GetFiles(chaptersDir, "ch-*.md").Where(f => !f.EndsWith(".scratch.md")).OrderBy(f => f))
+                {
+                    try
+                    {
+                        var firstLine = File.ReadLines(f).FirstOrDefault()?.TrimStart('#', ' ')?.Trim();
+                        if (!string.IsNullOrEmpty(firstLine) && firstLine.Length < 120)
+                            chapterTitles.Add(firstLine);
+                    }
+                    catch { }
+                }
+            }
 
             if (Directory.Exists(wikiDir))
             {
@@ -54,22 +68,60 @@ public static class ChatEndpoints
                 {
                     var charsDir = Path.Combine(wikiDir, "characters");
                     if (Directory.Exists(charsDir))
-                        characterCount = Directory.GetFiles(charsDir, "*.md").Length;
+                        characterNames = Directory.GetFiles(charsDir, "*.md")
+                            .Select(f => Path.GetFileNameWithoutExtension(f))
+                            .Where(n => !string.IsNullOrWhiteSpace(n))
+                            .ToList();
+
                     var locsDir = Path.Combine(wikiDir, "locations");
                     if (Directory.Exists(locsDir))
-                        locationCount = Directory.GetFiles(locsDir, "*.md").Length;
+                        locationNames = Directory.GetFiles(locsDir, "*.md")
+                            .Select(f => Path.GetFileNameWithoutExtension(f))
+                            .Where(n => !string.IsNullOrWhiteSpace(n))
+                            .ToList();
+
+                    var summaryFile = Path.Combine(wikiDir, "summary.md");
+                    if (File.Exists(summaryFile))
+                    {
+                        var summaryText = await File.ReadAllTextAsync(summaryFile, ct);
+                        // Strip markdown headings and take first 500 chars
+                        var stripped = string.Join(" ", summaryText.Split('\n')
+                            .Where(l => !l.TrimStart().StartsWith("#"))
+                            .Select(l => l.Trim())
+                            .Where(l => l.Length > 0));
+                        plotSummary = stripped.Length > 500 ? stripped[..500] + "..." : stripped;
+                    }
                 }
                 catch { }
             }
 
             var contextHint = new StringBuilder()
-                .AppendLine($"[Context: Working on \"{storyTitle}\" by {storyAuthor}.")
-                .Append($"{chapterCount} chapters, {characterCount} characters, {locationCount} locations in wiki.");
+                .AppendLine($"[Context: \"{storyTitle}\" by {storyAuthor}.");
+
+            if (chapterTitles.Count > 0)
+            {
+                contextHint.Append("Chapters: ");
+                for (int i = 0; i < chapterTitles.Count; i++)
+                {
+                    if (i > 0) contextHint.Append(" | ");
+                    contextHint.Append($"[{i + 1}] {chapterTitles[i]}");
+                }
+                contextHint.AppendLine();
+            }
+
+            if (characterNames.Count > 0)
+                contextHint.AppendLine($"Characters: {string.Join(", ", characterNames)}.");
+
+            if (locationNames.Count > 0)
+                contextHint.AppendLine($"Locations: {string.Join(", ", locationNames)}.");
+
+            if (!string.IsNullOrEmpty(plotSummary))
+                contextHint.AppendLine($"Plot: {plotSummary}");
 
             if (!string.IsNullOrEmpty(req.ActiveChapterId))
-                contextHint.Append($" Active chapter: {req.ActiveChapterId}.");
+                contextHint.AppendLine($"Active chapter: {req.ActiveChapterId}.");
 
-            contextHint.Append(" Use `ls chapters/`, `read chapters/{id}.md`, `ls wiki/characters/`, `read wiki/summary.md` to explore content as needed.]");
+            contextHint.AppendLine("Use `read chapters/{id}.md` for full text, `read wiki/characters/{name}.md` for character details, `read wiki/summary.md` for full plot.]");
             contextHint.AppendLine();
 
             // ── Agent session ──────────────────────────────────────────────
