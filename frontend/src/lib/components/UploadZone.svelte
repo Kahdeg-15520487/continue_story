@@ -23,6 +23,10 @@
       uploadError = `Unsupported file type: ${ext || 'none'}. Accepted: ${ACCEPTED}`;
       return;
     }
+    if (file.size > 100 * 1024 * 1024) {
+      uploadError = 'File is over the 100 MB limit.';
+      return;
+    }
     selectedFile = file;
     uploadError = '';
   }
@@ -83,8 +87,6 @@
       ondrop={handleDrop}
       ondragover={handleDragOver}
       ondragleave={handleDragLeave}
-      role="button"
-      tabindex="0"
     >
       {#if selectedFile}
         <div class="file-preview">
@@ -254,5 +256,7 @@
     color: #f97583;
     border-radius: 6px;
     font-size: 12px;
+    overflow-wrap: anywhere;
+    max-width: 100%;
   }
 </style>

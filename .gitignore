@@ -28,3 +28,4 @@ Thumbs.db
 # Library (user data)
 library/*
 !library/.gitkeep
+.pi/

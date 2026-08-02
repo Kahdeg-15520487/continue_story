@@ -130,9 +130,9 @@ public static class LibraryEndpoints
 }
 
 // DTOs
-public record BookSummaryDto(int Id, string Slug, string Title, string? Author, int? Year, string Status, DateTime UpdatedAt)
+public record BookSummaryDto(int Id, string Slug, string Title, string? Author, int? Year, string Status, string? ErrorMessage, DateTime UpdatedAt)
 {
-    public BookSummaryDto(Book b) : this(b.Id, b.Slug, b.Title, b.Author, b.Year, b.Status, b.UpdatedAt) { }
+    public BookSummaryDto(Book b) : this(b.Id, b.Slug, b.Title, b.Author, b.Year, b.Status, b.ErrorMessage, b.UpdatedAt) { }
 }
 
 public record BookDetailDto(int Id, string Slug, string Title, string? Author, int? Year, string? SourceFile, string Status, string? ErrorMessage, DateTime CreatedAt, DateTime UpdatedAt)

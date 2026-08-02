@@ -2,6 +2,31 @@
   import { goto } from '$app/navigation';
   import KnowledgePanel from '$lib/components/KnowledgePanel.svelte';
   import ChatPanel from '$lib/components/ChatPanel.svelte';
+
+  let chatWidth = $state(400);
+  let activeResize: { x: number; startWidth: number } | null = null;
+
+  function startResize(e: MouseEvent) {
+    activeResize = { x: e.clientX, startWidth: chatWidth };
+    document.addEventListener('mousemove', onResize);
+    document.addEventListener('mouseup', stopResize);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }
+
+  function onResize(e: MouseEvent) {
+    if (!activeResize) return;
+    const dx = activeResize.x - e.clientX;
+    chatWidth = Math.max(280, Math.min(800, activeResize.startWidth + dx));
+  }
+
+  function stopResize() {
+    activeResize = null;
+    document.removeEventListener('mousemove', onResize);
+    document.removeEventListener('mouseup', stopResize);
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  }
 </script>
 
 <svelte:head>
@@ -19,7 +44,18 @@
       <KnowledgePanel />
     </div>
 
-    <div class="kb-chat-pane">
+    <div
+      class="resize-handle"
+      role="separator"
+      aria-orientation="vertical"
+      tabindex="0"
+      onmousedown={startResize}
+      onkeydown={(e) => {
+        if (e.key === 'ArrowLeft') { e.preventDefault(); chatWidth = Math.max(280, chatWidth - 20); }
+        if (e.key === 'ArrowRight') { e.preventDefault(); chatWidth = Math.min(800, chatWidth + 20); }
+      }}
+    ></div>
+    <div class="kb-chat-pane" style="width: {chatWidth}px; min-width: {chatWidth}px;">
       <ChatPanel mode="knowledge" slug="__shared__" />
     </div>
   </div>
@@ -73,10 +109,32 @@
   }
 
   .kb-chat-pane {
-    width: 400px;
-    min-width: 400px;
     display: flex;
     flex-direction: column;
     background: var(--bg-primary, #0d1117);
+  }
+
+  .resize-handle {
+    width: 6px;
+    cursor: col-resize;
+    background: transparent;
+    transition: background 0.15s;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 10;
+  }
+
+  .resize-handle::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -4px;
+    right: -4px;
+    bottom: 0;
+  }
+
+  .resize-handle:hover,
+  .resize-handle:active {
+    background: var(--accent, #58a6ff);
   }
 </style>

@@ -119,10 +119,23 @@
 
   $effect(() => {
     if (visible) {
+      // Clamp the initial position into the viewport (selection can be near an edge)
+      requestAnimationFrame(clampToViewport);
       window.addEventListener('mousedown', handleOutsideClick);
       return () => window.removeEventListener('mousedown', handleOutsideClick);
     }
   });
+
+  function clampToViewport() {
+    if (!menuEl) return;
+    const rect = menuEl.getBoundingClientRect();
+    const maxX = Math.max(0, window.innerWidth - rect.width);
+    const maxY = Math.max(0, window.innerHeight - rect.height);
+    if (rect.left > maxX || rect.top > maxY) {
+      menuEl.style.left = Math.min(rect.left, maxX) + 'px';
+      menuEl.style.top = Math.min(rect.top, maxY) + 'px';
+    }
+  }
 
 </script>
 

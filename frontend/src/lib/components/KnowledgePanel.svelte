@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { api } from '$lib/api';
-  import { marked } from 'marked';
+  import { toastError } from '$lib/toast.svelte.ts';
+  import { renderMarkdown } from '$lib/markdown';
 
   interface KBEntry { file: string; title: string; tags: string[]; }
   interface KBCategory { name: string; entries: KBEntry[]; }
@@ -27,6 +28,7 @@
       allTags = data.tags;
     } catch (err) {
       console.error('Failed to load KB index:', err);
+      toastError('Failed to load knowledge base');
     } finally {
       loading = false;
     }
@@ -45,6 +47,15 @@
     } catch (err) {
       console.error('Search failed:', err);
     }
+  }
+
+  // Debounce typing — only hit the search endpoint after a pause
+  let searchTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function onSearchInput() {
+    if (searchTimer) clearTimeout(searchTimer);
+    if (!searchQuery.trim()) { searchResults = null; return; }
+    searchTimer = setTimeout(() => { doSearch(); }, 250);
   }
 
   function toggleTag(tag: string) {
@@ -70,7 +81,7 @@
     return categories.map(cat => ({
       ...cat,
       entries: cat.entries.filter(e => selectedTags.some(t => e.tags.map(x => x.toLowerCase()).includes(t.toLowerCase()))),
-    })).filter(cat => cat.entries.length > 0 || true); // always show categories
+    }));
   });
 
   async function selectEntry(category: string, file: string) {
@@ -99,6 +110,7 @@
       await loadIndex();
     } catch (err) {
       console.error('Failed to save:', err);
+      toastError('Failed to save entry');
     }
   }
 
@@ -114,6 +126,7 @@
       selectEntry(selectedCategory, name);
     } catch (err) {
       console.error('Failed to create entry:', err);
+      toastError('Failed to create entry');
     }
   }
 
@@ -128,6 +141,7 @@
       await loadIndex();
     } catch (err) {
       console.error('Failed to delete:', err);
+      toastError('Failed to delete entry');
     }
   }
 
@@ -143,6 +157,7 @@
       await loadIndex();
     } catch (err) {
       console.error('Failed to delete category:', err);
+      toastError('Failed to delete category');
     }
   }
 
@@ -159,9 +174,15 @@
     return md.slice(end + 4).trimStart();
   }
 
-  let renderedHtml = $derived(entryContent ? marked.parse(stripFrontmatter(entryContent), { async: false }) as string : '');
+  let renderedHtml = $derived(entryContent ? renderMarkdown(stripFrontmatter(entryContent)) : '');
 
   onMount(loadIndex);
+
+  $effect(() => {
+    return () => {
+      if (searchTimer) clearTimeout(searchTimer);
+    };
+  });
 </script>
 
 <div class="knowledge-panel">
@@ -186,7 +207,7 @@
           type="text"
           bind:value={searchQuery}
           placeholder={selectedTags.length > 0 ? 'Add tag...' : 'Search entries...'}
-          oninput={() => { if (!searchQuery.trim()) searchResults = null; else doSearch(); }}
+          oninput={onSearchInput}
           onkeydown={(e) => {
             if (e.key === 'Backspace' && !searchQuery && selectedTags.length > 0) {
               toggleTag(selectedTags[selectedTags.length - 1]);

@@ -8,6 +8,7 @@ public class Book
     public string? Author { get; set; }
     public int? Year { get; set; }
     public string? SourceFile { get; set; }        // Original uploaded filename
+    public string? ConversionJobId { get; set; }    // Hangfire job id of the latest conversion
     public string Status { get; set; } = "pending"; // pending, converting, ready, error
     public string? ErrorMessage { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

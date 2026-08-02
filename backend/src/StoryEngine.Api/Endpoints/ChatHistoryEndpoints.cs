@@ -70,6 +70,7 @@ public static class ChatHistoryEndpoints
                 Role = req.Role,
                 Content = req.Content,
                 Thinking = req.Thinking,
+                SessionId = req.SessionId,
                 CreatedAt = DateTime.UtcNow,
             };
 
@@ -117,4 +118,4 @@ public static class ChatHistoryEndpoints
     }
 }
 
-public record SaveChatMessageRequest(string Role, string Content, string? Thinking = null);
+public record SaveChatMessageRequest(string Role, string Content, string? Thinking = null, string? SessionId = null);

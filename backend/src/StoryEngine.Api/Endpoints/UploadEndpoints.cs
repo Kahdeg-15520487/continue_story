@@ -83,6 +83,11 @@ public static class UploadEndpoints
             var jobId = jobClient.Enqueue<IConversionService>(x =>
                 x.ConvertToMarkdownAsync(filePath, outputPath, CancellationToken.None));
 
+            // Remember the job id so /status can report this book's job state
+            book.ConversionJobId = jobId;
+            book.UpdatedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+
             // Update book status when conversion completes
             // Use the parent jobId to prevent duplicate continuations
             jobClient.ContinueJobWith<ConversionJobService>(jobId,
@@ -105,7 +110,7 @@ public static class UploadEndpoints
         .WithMetadata(new RequestSizeLimitAttribute(100 * 1024 * 1024));  // 100MB limit
 
         // Conversion job status endpoint
-        group.MapGet("/status", async (string slug, AppDbContext db) =>
+        group.MapGet("/status", async (string slug, AppDbContext db, IHostEnvironment env) =>
         {
             var book = await db.Books.FirstOrDefaultAsync(b => b.Slug == slug);
             if (book is null)
@@ -114,12 +119,26 @@ public static class UploadEndpoints
             // Get Hangfire job statistics
             var monitoring = JobStorage.Current.GetMonitoringApi();
 
+            // Per-book job state (null when the job id is missing or already expired)
+            string? jobState = null;
+            if (!string.IsNullOrEmpty(book.ConversionJobId))
+            {
+                try
+                {
+                    var details = monitoring.JobDetails(book.ConversionJobId);
+                    jobState = details?.History?.LastOrDefault()?.StateName;
+                }
+                catch { /* job expired or unknown */ }
+            }
+
             return Results.Ok(new
             {
                 book.Status,
                 book.SourceFile,
                 book.ErrorMessage,
                 book.UpdatedAt,
+                jobState,
+                showHangfireLink = env.IsDevelopment(),
                 hangfire = new
                 {
                     enqueued = monitoring.EnqueuedCount("default"),

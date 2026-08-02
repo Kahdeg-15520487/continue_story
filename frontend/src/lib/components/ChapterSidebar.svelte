@@ -1,10 +1,12 @@
 <script lang="ts">
   import { api } from '$lib/api';
+  import { toastError } from '$lib/toast.svelte.ts';
   import type { ChapterInfo } from '$lib/types';
 
-  let { slug, activeChapterId = $bindable(), onChapterSelect }: {
+  let { slug, activeChapterId = $bindable(), collapsed = $bindable(false), onChapterSelect }: {
     slug: string;
     activeChapterId: string | null;
+    collapsed: boolean;
     onChapterSelect?: (id: string) => void;
   } = $props();
 
@@ -12,10 +14,16 @@
   let loading = $state(true);
   let adding = $state(false);
   let newTitle = $state('');
-  let collapsed = $state(false);
   let showMenu = $state(false);
   let regenerating = $state(false);
   let generatingWiki = $state(false);
+  let filter = $state('');
+
+  let filteredChapters = $derived(
+    filter.trim()
+      ? chapters.filter(c => c.title.toLowerCase().includes(filter.trim().toLowerCase()))
+      : chapters,
+  );
 
   async function loadChapters() {
     try {
@@ -38,6 +46,7 @@
       onChapterSelect?.(created.id);
     } catch (err) {
       console.error('Failed to add chapter:', err);
+      toastError('Failed to add chapter');
     } finally {
       adding = false;
     }
@@ -57,19 +66,38 @@
       }
     } catch (err) {
       console.error('Failed to delete chapter:', err);
+      toastError('Failed to delete chapter');
     }
   }
 
   async function regenerateTitles() {
     if (regenerating) return;
     regenerating = true;
-    showMenu = false;
+    // Keep the menu open in its busy state; poll until titles change (or timeout)
+    const snapshot = chapters.map(c => c.title);
     try {
       await api.regenerateTitles(slug);
-      setTimeout(() => { loadChapters(); }, 3000);
+      const started = Date.now();
+      const poll = async () => {
+        await loadChapters();
+        const changed = chapters.length !== snapshot.length || chapters.some((c, i) => c.title !== snapshot[i]);
+        if (changed) {
+          regenerating = false;
+          showMenu = false;
+          return;
+        }
+        if (Date.now() - started > 120_000) {
+          regenerating = false;
+          showMenu = false;
+          toastError('Title regeneration timed out');
+          return;
+        }
+        setTimeout(poll, 3000);
+      };
+      setTimeout(poll, 3000);
     } catch (err) {
       console.error('Failed to regenerate titles:', err);
-    } finally {
+      toastError('Failed to regenerate titles');
       regenerating = false;
     }
   }
@@ -82,6 +110,7 @@
       await api.triggerLoreGeneration(slug);
     } catch (err) {
       console.error('Failed to generate wiki:', err);
+      toastError('Failed to generate wiki');
     } finally {
       generatingWiki = false;
     }
@@ -129,12 +158,23 @@
     {:else if chapters.length === 0}
       <div class="sidebar-empty">No chapters yet</div>
     {:else}
+      {#if chapters.length > 1}
+        <div class="chapter-filter">
+          <input
+            type="text"
+            placeholder="Search chapters..."
+            bind:value={filter}
+            onkeydown={(e) => { if (e.key === 'Escape') filter = ''; }}
+          />
+        </div>
+      {/if}
       <div class="chapter-list">
-        {#each chapters as chapter (chapter.id)}
+        {#each filteredChapters as chapter (chapter.id)}
           <button
             class="chapter-item"
             class:active={activeChapterId === chapter.id}
             onclick={() => onChapterSelect?.(chapter.id)}
+            title={chapter.title}
           >
             <span class="chapter-number">{chapter.number}</span>
             <span class="chapter-title">{chapter.title}</span>
@@ -270,6 +310,26 @@
     overflow-y: auto;
   }
 
+  .chapter-filter {
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .chapter-filter input {
+    width: 100%;
+    padding: 4px 8px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 12px;
+    outline: none;
+  }
+
+  .chapter-filter input:focus {
+    border-color: var(--accent);
+  }
+
   .chapter-item {
     display: flex;
     align-items: center;
@@ -317,18 +377,23 @@
   }
 
   .delete-btn {
-    display: none;
+    display: inline;
     background: none;
     border: none;
     color: #f97583;
     cursor: pointer;
-    padding: 0 2px;
+    padding: 0 4px;
     font-size: 14px;
     line-height: 1;
+    opacity: 0.3;
+    border-radius: 4px;
+    transition: opacity 0.15s;
   }
 
-  .chapter-item:hover .delete-btn {
-    display: inline;
+  .chapter-item:hover .delete-btn,
+  .chapter-item:focus-within .delete-btn,
+  .delete-btn:focus-visible {
+    opacity: 1;
   }
 
   .add-chapter {

@@ -131,8 +131,36 @@ public static class LoreEndpoints
             var content = await File.ReadAllTextAsync(filePath);
             return Results.Ok(new { file = "summary.md", content });
         });
+
+        // Save a wiki entity file (characters/locations/root)
+        // PUT /api/books/{slug}/lore/{category}/{entity}  body: { content }
+        group.MapPut("/{category}/{entity}", async (string slug, string category, string entity, SaveWikiRequest req, IConfiguration config) =>
+        {
+            if (InvalidSlug(slug)) return Results.BadRequest(new { error = "Invalid slug" });
+            if (category.Contains("..") || category.Contains('/') || category.Contains('\\'))
+                return Results.BadRequest(new { error = "Invalid category" });
+            if (entity.Contains("..") || entity.Contains('/') || entity.Contains('\\') || !entity.EndsWith(".md"))
+                return Results.BadRequest(new { error = "Invalid entity" });
+
+            // Only allow known categories
+            if (category != "characters" && category != "locations" && category != "root")
+                return Results.BadRequest(new { error = "Unknown category" });
+
+            var libraryPath = config.GetValue<string>("Library:Path") ?? "/library";
+            var filePath = category == "root"
+                ? Path.Combine(libraryPath, slug, "wiki", entity)
+                : Path.Combine(libraryPath, slug, "wiki", category, entity);
+
+            if (!File.Exists(filePath))
+                return Results.NotFound(new { error = "Entity not found" });
+
+            await File.WriteAllTextAsync(filePath, req.Content);
+            return Results.Ok(new { saved = true, file = $"{category}/{entity}" });
+        });
     }
 
     private static bool InvalidSlug(string slug) =>
         string.IsNullOrWhiteSpace(slug) || slug.Contains("..") || slug.Contains('/') || slug.Contains('\\');
 }
+
+public record SaveWikiRequest(string Content);

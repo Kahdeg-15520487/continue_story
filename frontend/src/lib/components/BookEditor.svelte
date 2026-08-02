@@ -19,6 +19,7 @@
   let editorEl: HTMLDivElement;
   let wrapperEl: HTMLDivElement;
   let editor: Editor | null = $state(null);
+  let editorView: EditorView | null = null;
   let lastContent = '';
   let ignoreNextUpdate = false;
 
@@ -79,8 +80,9 @@
       }
     });
 
-    const editorView = newEditor.ctx.get(editorViewCtx);
-    cleanupSelectionListeners = setupSelectionListeners(editorView);
+    const view = newEditor.ctx.get(editorViewCtx);
+    editorView = view;
+    cleanupSelectionListeners = setupSelectionListeners(view);
     editor = newEditor;
   }
 
@@ -118,6 +120,13 @@
       editorView.dom.setAttribute('contenteditable', 'true');
     }
   });
+  export function focus() {
+    editorView?.focus();
+  }
+
+  export function getWrapperEl(): HTMLDivElement | null {
+    return wrapperEl ?? null;
+  }
 </script>
 
 <div class="milkdown-wrapper" class:readonly bind:this={wrapperEl} onscroll={onScroll}>
@@ -189,7 +198,14 @@
     margin: 24px 0;
   }
 
+  .milkdown-wrapper.readonly {
+    user-select: text;
+    cursor: text;
+  }
+
   .milkdown-wrapper.readonly :global(.milkdown) {
-    pointer-events: none;
+    /* Let the user select/copy prose in read-only mode (contenteditable=false already blocks editing) */
+    user-select: text;
+    cursor: text;
   }
 </style>

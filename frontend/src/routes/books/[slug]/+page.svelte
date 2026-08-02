@@ -9,6 +9,7 @@
   import InlineEditMenu from '$lib/components/InlineEditMenu.svelte';
   import DiffOverlay from '$lib/components/DiffOverlay.svelte';
   import { api } from '$lib/api';
+  import { toastError } from '$lib/toast.svelte.ts';
   import type { BookDetail, ConversionStatus } from '$lib/types';
 
   let slug = $derived($page.params.slug);
@@ -17,7 +18,6 @@
   let loading = $state(true);
   let error = $state('');
   let isEditing = $state(false);
-  let saving = $state(false);
   let showChat = $state(false);
   let showLore = $state(false);
 
@@ -33,6 +33,8 @@
 
   let activeChapterId: string | null = $state(null);
   let chapterSidebar: ChapterSidebar | null = $state(null);
+  let lorePanel: LorePanel | null = $state(null);
+  let editorRef: BookEditor | null = $state(null);
 
   async function saveTitle() {
     if (!book || !titleInput.trim() || titleInput.trim() === book.title) {
@@ -45,6 +47,7 @@
       book = updated;
     } catch (err) {
       console.error('Failed to update title:', err);
+      toastError('Failed to update title');
     } finally {
       titleSaving = false;
       editingTitle = false;
@@ -62,7 +65,7 @@
 
   function saveReadingPosition() {
     if (!activeChapterId) return;
-    const wrapper = document.querySelector('.editor-pane .milkdown-wrapper') as HTMLDivElement | null;
+    const wrapper = editorRef?.getWrapperEl();
     const scrollTop = wrapper?.scrollTop ?? 0;
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({ chapterId: activeChapterId, scrollTop }));
@@ -88,6 +91,29 @@
   let loreWidth = $state(400);
   let chatWidth = $state(400);
   let activeResize: { key: 'lore' | 'chat'; x: number; startWidth: number } | null = null;
+  let sidebarCollapsed = $state(false);
+
+  // Persist panel state per book (derived so it tracks SPA navigation between books)
+  let PANEL_KEY = $derived(`book-ui-${slug}`);
+
+  function loadPanelState() {
+    try {
+      const raw = localStorage.getItem(PANEL_KEY);
+      if (!raw) return;
+      const s = JSON.parse(raw);
+      if (typeof s.showChat === 'boolean') showChat = s.showChat;
+      if (typeof s.showLore === 'boolean') showLore = s.showLore;
+      if (typeof s.chatWidth === 'number') chatWidth = Math.max(280, Math.min(800, s.chatWidth));
+      if (typeof s.loreWidth === 'number') loreWidth = Math.max(280, Math.min(800, s.loreWidth));
+      if (typeof s.sidebarCollapsed === 'boolean') sidebarCollapsed = s.sidebarCollapsed;
+    } catch { }
+  }
+
+  $effect(() => {
+    try {
+      localStorage.setItem(PANEL_KEY, JSON.stringify({ showChat, showLore, chatWidth, loreWidth, sidebarCollapsed }));
+    } catch { }
+  });
 
   function startResize(key: 'lore' | 'chat') {
     return (e: MouseEvent) => {
@@ -117,6 +143,17 @@
     document.removeEventListener('mouseup', stopResize);
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
+  }
+
+  // Keyboard resize for the panel handles (role=separator)
+  function resizeKeydown(key: 'lore' | 'chat') {
+    return (e: KeyboardEvent) => {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      e.preventDefault();
+      const delta = e.key === 'ArrowLeft' ? -20 : 20;
+      if (key === 'lore') loreWidth = Math.max(280, Math.min(800, loreWidth + delta));
+      else chatWidth = Math.max(280, Math.min(800, chatWidth + delta));
+    };
   }
 
   let conversionStatus: ConversionStatus | null = $state(null);
@@ -178,12 +215,70 @@
   }
 
   let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+  let currentContent = $state('');
+  let lastSavedContent = $state('');
+  let saveStatus = $state<'clean' | 'dirty' | 'saving' | 'saved'>('clean');
+  let savePromise: Promise<void> | null = null;
 
   async function debouncedSave(newContent: string) {
     if (saveTimeout) clearTimeout(saveTimeout);
+    saveStatus = 'dirty';
     saveTimeout = setTimeout(async () => {
-      await saveContent(newContent);
+      saveTimeout = null;
+      await saveContent(newContent).catch(() => {});
     }, 1000);
+  }
+
+  /** Persist the editor's current markdown, waiting for any in-flight save first. */
+  async function saveContent(newContent: string) {
+    if (!isEditing || !slug) return;
+    if (savePromise) {
+      try { await savePromise; } catch { /* previous save failed — retry below */ }
+    }
+    const saveChapterId = activeChapterId;
+    saveStatus = 'saving';
+    const p = (async () => {
+      try {
+        if (saveChapterId) {
+          await api.saveChapter(slug, saveChapterId, newContent);
+        } else {
+          await api.saveBookContent(slug, newContent);
+        }
+        // Don't clobber the editor if the user switched chapters mid-save
+        if (activeChapterId === saveChapterId) content = newContent;
+        lastSavedContent = newContent;
+        saveStatus = 'saved';
+        chapterSidebar?.refresh();
+      } catch (err) {
+        console.error('Save failed:', err);
+        toastError('Failed to save changes');
+        saveStatus = 'dirty';
+        throw err;
+      }
+    })();
+    savePromise = p;
+    try {
+      await p;
+    } finally {
+      if (savePromise === p) savePromise = null;
+    }
+  }
+
+  /** Save any pending edits immediately (chapter switch, lock, beforeunload). */
+  async function flushPendingSave() {
+    if (saveTimeout) {
+      clearTimeout(saveTimeout);
+      saveTimeout = null;
+    }
+    if (!isEditing || !slug) return;
+    if (saveStatus === 'dirty' || saveStatus === 'saving') {
+      await saveContent(currentContent);
+    }
+  }
+
+  async function toggleEditing() {
+    await flushPendingSave().catch(() => {});
+    isEditing = !isEditing;
   }
 
   async function loadChapterContent() {
@@ -200,6 +295,9 @@
         if (chapter) {
           activeChapterId = tryChapterId;
           content = chapter.content;
+          currentContent = chapter.content;
+          lastSavedContent = chapter.content;
+          saveStatus = 'clean';
 
           // Check for pending scratch file
           try {
@@ -213,7 +311,7 @@
           // Restore scroll after render
           if (saved?.scrollTop) {
             setTimeout(() => {
-              const wrapper = document.querySelector('.editor-pane .milkdown-wrapper') as HTMLDivElement | null;
+              const wrapper = editorRef?.getWrapperEl();
               if (wrapper) wrapper.scrollTop = saved.scrollTop;
             }, 100);
           }
@@ -229,6 +327,9 @@
         const chapter = await api.getChapter(slug, activeChapterId);
         if (chapter) {
           content = chapter.content;
+          currentContent = chapter.content;
+          lastSavedContent = chapter.content;
+          saveStatus = 'clean';
           return;
         }
       }
@@ -237,6 +338,9 @@
     try {
       const result = await api.getBookContent(slug);
       content = result.content;
+      currentContent = result.content;
+      lastSavedContent = result.content;
+      saveStatus = 'clean';
     } catch { /* no content at all */ }
   }
 
@@ -260,29 +364,11 @@
     }
   }
 
-  async function saveContent(newContent: string) {
-    if (saving || !isEditing || !slug) return;
-    saving = true;
-    try {
-      if (activeChapterId) {
-        await api.saveChapter(slug, activeChapterId, newContent);
-      } else {
-        await api.saveBookContent(slug, newContent);
-      }
-      content = newContent;
-      chapterSidebar?.refresh();
-    } catch (err) {
-      console.error('Save failed:', err);
-    } finally {
-      saving = false;
-    }
-  }
-
   async function handleChapterSelect(id: string) {
     // Save scroll position of current chapter before switching
     saveReadingPosition();
-    // Cancel any pending save so it doesn't overwrite the target chapter
-    if (saveTimeout) { clearTimeout(saveTimeout); saveTimeout = null; }
+    // Flush any pending edits so the previous chapter's changes are persisted
+    await flushPendingSave().catch(() => {});
     // Dismiss diff UI but keep scratch file on disk (user must explicitly reject)
     diffState = null;
     showInlineEdit = false;
@@ -291,6 +377,9 @@
       const chapter = await api.getChapter(slug, id);
       if (chapter) {
         content = chapter.content;
+        currentContent = chapter.content;
+        lastSavedContent = chapter.content;
+        saveStatus = 'clean';
         activeChapterId = id;
 
         // Check for pending scratch file
@@ -321,6 +410,7 @@
       diffState = { original: content, scratch: result.content };
     } catch (err) {
       console.error('Failed to load scratch content:', err);
+      toastError("Failed to load the agent's edit");
     }
   }
 
@@ -337,8 +427,10 @@
       diffState = null;
       await handleChapterSelect(activeChapterId);
       chapterSidebar?.refresh();
+      editorRef?.focus();
     } catch (err) {
       console.error('Accept edit failed:', err);
+      toastError('Failed to apply edit');
     }
   }
 
@@ -350,6 +442,7 @@
       // Ignore — scratch might not exist
     }
     diffState = null;
+    editorRef?.focus();
   }
 
   async function handleChatEditDone(chapterId: string) {
@@ -371,16 +464,19 @@
           original: chapter.content,
           scratch: result.content,
         };
-        showInlineEdit = true;
+        // NOTE: do NOT set showInlineEdit here — the diff renders from diffState alone,
+        // and the floating InlineEditMenu would pop up at stale selection coordinates.
       }
     } catch (err: any) {
       console.error('Failed to load chat edit diff:', err);
+      toastError('Failed to load the chat edit');
     }
   }
 
   function handleResponseDone() {
-    // Refresh chapter list after agent finishes — it may have created new chapters
+    // Refresh chapter list and wiki after agent finishes — it may have created chapters/entities
     chapterSidebar?.refresh();
+    lorePanel?.refresh();
   }
 
   async function handleRetry() {
@@ -393,9 +489,22 @@
     startConversionPolling();
   }
 
-  onMount(loadBook);
+  onMount(() => {
+    loadPanelState();
+    loadBook();
+  });
 
   let interruptedTasks: Array<{ id: number; taskType: string; description: string }> = $state([]);
+
+  function jobStateLabel(state: string): string {
+    switch (state) {
+      case 'Succeeded': return '✅ Completed';
+      case 'Processing': return '⏳ Processing...';
+      case 'Enqueued': return '⏳ Queued...';
+      case 'Failed': return '❌ Failed';
+      default: return state;
+    }
+  }
 
   $effect(() => {
     if (book) {
@@ -410,12 +519,38 @@
   <title>{$page.params.slug ? `${book?.title ?? 'Loading...'} — Story Engine` : 'Story Engine'}</title>
 </svelte:head>
 
+<svelte:window
+  onbeforeunload={(e) => {
+    if (saveStatus === 'dirty' || saveStatus === 'saving' || saveTimeout) {
+      e.preventDefault();
+      e.returnValue = '';
+    }
+  }}
+  onkeydown={(e) => {
+    // Escape closes the focused side panel (chat first, then wiki)
+    if (e.key === 'Escape') {
+      if (showChat) showChat = false;
+      else if (showLore) showLore = false;
+    }
+    // Ctrl/Cmd+S flushes pending edits while editing
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+      if (isEditing) {
+        e.preventDefault();
+        flushPendingSave();
+      }
+    }
+  }}
+/>
+
 {#if loading}
   <div class="loading-screen">Loading book...</div>
 {:else if error}
   <div class="error-screen">
     <p>{error}</p>
-    <a href="/" class="back-link">← Back to Library</a>
+    <div class="error-actions">
+      <button class="btn" onclick={loadBook}>Retry</button>
+      <a href="/" class="back-link">← Back to Library</a>
+    </div>
   </div>
 {:else if book}
   <div class="book-view">
@@ -434,16 +569,20 @@
         <h2 class="book-title editable" onclick={startEditTitle} title="Click to rename">{book.title}</h2>
       {/if}
       <div class="toolbar-actions">
-        <button class="btn" onclick={() => isEditing = !isEditing}>
+        <button class="btn" onclick={toggleEditing}>
           {isEditing ? '🔒 Lock' : '✏️ Edit'}
         </button>
-        {#if saving}
+        {#if saveStatus === 'dirty'}
+          <span class="status-dirty">Unsaved changes</span>
+        {:else if saveStatus === 'saving'}
           <span class="status-saving">Saving...</span>
+        {:else if saveStatus === 'saved'}
+          <span class="status-saved">Saved</span>
         {/if}
-        <button class="btn" onclick={() => showLore = !showLore}>
+        <button class="btn" class:active={showLore} onclick={() => showLore = !showLore}>
           📖 Wiki
         </button>
-        <button class="btn" onclick={() => showChat = !showChat}>
+        <button class="btn" class:active={showChat} onclick={() => showChat = !showChat}>
           💬 Chat
         </button>
       </div>
@@ -469,7 +608,7 @@
 
     <div class="main-area">
       {#if book.status === 'ready' || book.status === 'lore-ready' || book.status === 'splitting' || book.status === 'generating-lore'}
-        <ChapterSidebar bind:this={chapterSidebar} {slug} bind:activeChapterId onChapterSelect={handleChapterSelect} />
+        <ChapterSidebar bind:this={chapterSidebar} {slug} bind:activeChapterId bind:collapsed={sidebarCollapsed} onChapterSelect={handleChapterSelect} />
 
         <div class="editor-pane">
           {#if book.status === 'splitting'}
@@ -494,9 +633,10 @@
           {:else if content}
             {#key activeChapterId}
               <BookEditor
+                bind:this={editorRef}
                 {content}
                 readonly={!isEditing}
-                onContentChange={(md) => { if (isEditing) debouncedSave(md); }}
+                onContentChange={(md) => { if (isEditing) { currentContent = md; debouncedSave(md); } }}
                 onTextSelect={handleTextSelect}
                 onScroll={onEditorScroll}
               />
@@ -537,28 +677,37 @@
                 </div>
               {/if}
 
+              {#if conversionStatus?.jobState}
+                <div class="conversion-detail">
+                  <span class="detail-label">This book's job</span>
+                  <span class="detail-value">{jobStateLabel(conversionStatus.jobState)}</span>
+                </div>
+              {/if}
+
               {#if conversionStatus?.hangfire}
                 <div class="conversion-jobs">
                   <div class="job-stat">
                     <span class="job-num">{conversionStatus.hangfire.processing}</span>
-                    <span class="job-label">processing</span>
+                    <span class="job-label">processing (all jobs)</span>
                   </div>
                   <div class="job-stat">
                     <span class="job-num">{conversionStatus.hangfire.enqueued}</span>
-                    <span class="job-label">queued</span>
+                    <span class="job-label">queued (all jobs)</span>
                   </div>
                   <div class="job-stat">
                     <span class="job-num">{conversionStatus.hangfire.succeeded}</span>
-                    <span class="job-label">done</span>
+                    <span class="job-label">done (all jobs)</span>
                   </div>
                   {#if conversionStatus.hangfire.failed > 0}
                     <div class="job-stat failed">
                       <span class="job-num">{conversionStatus.hangfire.failed}</span>
-                      <span class="job-label">failed</span>
+                      <span class="job-label">failed (all jobs)</span>
                     </div>
                   {/if}
                 </div>
-                <a href="/hangfire" target="_blank" class="hangfire-link">View in Hangfire Dashboard</a>
+                {#if conversionStatus.showHangfireLink}
+                  <a href="/hangfire" target="_blank" class="hangfire-link">View in Hangfire Dashboard</a>
+                {/if}
               {/if}
             </div>
           </div>
@@ -570,7 +719,7 @@
               <span>⚠️ {book.errorMessage || `Error: ${book.status}`}</span>
               <button class="btn btn-retry" onclick={handleRetry}>Retry</button>
             </div>
-            <ChapterSidebar bind:this={chapterSidebar} {slug} bind:activeChapterId onChapterSelect={handleChapterSelect} />
+            <ChapterSidebar bind:this={chapterSidebar} {slug} bind:activeChapterId bind:collapsed={sidebarCollapsed} onChapterSelect={handleChapterSelect} />
             {#if diffState}
               <DiffOverlay
                 originalContent={diffState.original}
@@ -581,9 +730,10 @@
             {:else}
               {#key activeChapterId}
                 <BookEditor
+                  bind:this={editorRef}
                   {content}
                   readonly={!isEditing}
-                  onContentChange={(md) => { if (isEditing) debouncedSave(md); }}
+                  onContentChange={(md) => { if (isEditing) { currentContent = md; debouncedSave(md); } }}
                   onTextSelect={handleTextSelect}
                   onScroll={onEditorScroll}
                 />
@@ -601,14 +751,14 @@
       {/if}
 
       {#if showLore}
-        <div class="resize-handle" role="separator" onmousedown={startResize('lore')}></div>
+        <div class="resize-handle" role="separator" aria-orientation="vertical" tabindex="0" onmousedown={startResize('lore')} onkeydown={resizeKeydown('lore')}></div>
         <div class="side-panel" style="width: {loreWidth}px; min-width: {loreWidth}px;">
-          <LorePanel {slug} />
+          <LorePanel bind:this={lorePanel} {slug} />
         </div>
       {/if}
 
       {#if showChat}
-        <div class="resize-handle" role="separator" onmousedown={startResize('chat')}></div>
+        <div class="resize-handle" role="separator" aria-orientation="vertical" tabindex="0" onmousedown={startResize('chat')} onkeydown={resizeKeydown('chat')}></div>
         <div class="side-panel" style="width: {chatWidth}px; min-width: {chatWidth}px;">
           <ChatPanel {slug} {activeChapterId} onEditDone={handleChatEditDone} onResponseDone={handleResponseDone} />
         </div>
@@ -626,6 +776,12 @@
     height: 100vh;
     gap: 16px;
     color: var(--text-secondary);
+  }
+
+  .error-actions {
+    display: flex;
+    align-items: center;
+    gap: 16px;
   }
 
   .book-view {
@@ -676,7 +832,6 @@
     border-radius: 4px;
     color: var(--text-primary);
     padding: 2px 6px;
-    outline: none;
   }
 
   .toolbar-actions {
@@ -693,6 +848,12 @@
     color: var(--text-primary);
     cursor: pointer;
     font-size: 13px;
+  }
+
+  .btn.active {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(88, 166, 255, 0.1);
   }
 
   .main-area {
@@ -723,6 +884,21 @@
 
   .status-message.error {
     color: #f97583;
+  }
+
+  .status-saving {
+    color: var(--text-secondary);
+    font-size: 12px;
+  }
+
+  .status-dirty {
+    color: var(--warning);
+    font-size: 12px;
+  }
+
+  .status-saved {
+    color: var(--success);
+    font-size: 12px;
   }
 
   .spinner {

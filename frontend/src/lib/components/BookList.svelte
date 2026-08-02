@@ -1,11 +1,27 @@
 <script lang="ts">
+  import { browser } from '$app/environment';
   import type { BookSummary } from '$lib/types';
   import { api } from '$lib/api';
+  import { toastError } from '$lib/toast.svelte.ts';
 
   let { books = $bindable([]), }: { books: BookSummary[] } = $props();
 
   type SortMode = 'modified' | 'abc';
   let sortMode: SortMode = $state('modified');
+
+  // Persist the sort preference
+  const SORT_KEY = 'book-sort-mode';
+  if (browser) {
+    try {
+      const v = localStorage.getItem(SORT_KEY);
+      if (v === 'abc' || v === 'modified') sortMode = v;
+    } catch { }
+  }
+
+  $effect(() => {
+    if (!browser) return;
+    try { localStorage.setItem(SORT_KEY, sortMode); } catch { }
+  });
 
   function statusIcon(status: string): string {
     switch (status) {
@@ -39,6 +55,7 @@
       books = books.filter(b => b.slug !== slug);
     } catch (err) {
       console.error('Delete failed:', err);
+      toastError('Failed to delete book');
     }
   }
 </script>
@@ -60,11 +77,14 @@
   {:else}
     {#each sortedBooks as book (book.slug)}
       <a href="/books/{book.slug}" class="book-item">
-        <span class="status-icon">{statusIcon(book.status)}</span>
+        <span class="status-icon" title={book.status}>{statusIcon(book.status)}</span>
         <div class="book-info">
-          <span class="book-title">{book.title}</span>
+          <span class="book-title" title={book.title}>{book.title}</span>
           {#if book.author}
             <span class="book-author">{book.author}</span>
+          {/if}
+          {#if book.status === 'error' && book.errorMessage}
+            <span class="book-error" title={book.errorMessage}>{book.errorMessage}</span>
           {/if}
         </div>
         <button class="btn-delete" onclick={(e) => deleteBook(book.slug, e)} title="Delete book">✕</button>
@@ -163,6 +183,14 @@
     text-overflow: ellipsis;
   }
 
+  .book-error {
+    font-size: 11px;
+    color: var(--error);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
   .btn-delete {
     background: none;
     border: none;
@@ -171,12 +199,14 @@
     font-size: 13px;
     padding: 4px 8px;
     border-radius: 4px;
-    opacity: 0;
+    opacity: 0.35;
     transition: opacity 0.15s, color 0.15s;
     flex-shrink: 0;
   }
 
-  .book-item:hover .btn-delete {
+  .book-item:hover .btn-delete,
+  .book-item:focus-within .btn-delete,
+  .btn-delete:focus-visible {
     opacity: 1;
   }
 

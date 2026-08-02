@@ -5,6 +5,7 @@ export interface BookSummary {
   author: string | null;
   year: number | null;
   status: string;
+  errorMessage: string | null;
   updatedAt: string;
 }
 
@@ -76,6 +77,8 @@ export interface ConversionStatus {
   sourceFile: string | null;
   errorMessage: string | null;
   updatedAt: string;
+  jobState: string | null;
+  showHangfireLink: boolean;
   hangfire: {
     enqueued: number;
     processing: number;

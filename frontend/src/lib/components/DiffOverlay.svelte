@@ -9,9 +9,24 @@
   }: {
     originalContent: string;
     scratchContent: string;
-    onAccept: () => void;
-    onReject: () => void;
+    onAccept: () => void | Promise<void>;
+    onReject: () => void | Promise<void>;
   } = $props();
+
+  // Busy state prevents double-click double-submits
+  let busy: 'accept' | 'reject' | null = $state(null);
+
+  async function handleAccept() {
+    if (busy) return;
+    busy = 'accept';
+    try { await onAccept(); } finally { busy = null; }
+  }
+
+  async function handleReject() {
+    if (busy) return;
+    busy = 'reject';
+    try { await onReject(); } finally { busy = null; }
+  }
 
   type ViewMode = 'diff' | 'original' | 'scratch';
   let viewMode: ViewMode = $state('diff');
@@ -87,8 +102,12 @@
   </div>
 
   <div class="diff-actions">
-    <button class="btn-accept" onclick={onAccept}>✓ Accept</button>
-    <button class="btn-reject" onclick={onReject}>✗ Reject</button>
+    <button class="btn-accept" onclick={handleAccept} disabled={busy !== null}>
+      {busy === 'accept' ? 'Accepting...' : '✓ Accept'}
+    </button>
+    <button class="btn-reject" onclick={handleReject} disabled={busy !== null}>
+      {busy === 'reject' ? 'Rejecting...' : '✗ Reject'}
+    </button>
   </div>
 </div>
 
@@ -239,5 +258,11 @@
   .btn-reject:hover {
     background: rgba(248, 81, 73, 0.15);
     color: #fff;
+  }
+
+  .btn-accept:disabled,
+  .btn-reject:disabled {
+    opacity: 0.6;
+    cursor: wait;
   }
 </style>

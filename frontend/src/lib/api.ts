@@ -69,6 +69,12 @@ export const api = {
   getWikiSummary: (slug: string) =>
     request<{ file: string; content: string }>(`/books/${slug}/lore/summary`),
 
+  saveWikiEntity: (slug: string, category: string, entity: string, content: string) =>
+    request<{ saved: boolean; file: string }>(`/books/${slug}/lore/${category}/${encodeURIComponent(entity)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ content }),
+    }),
+
   triggerLoreGeneration: (slug: string) =>
     request<{ jobId: string; status: string }>(`/books/${slug}/lore`, {
       method: 'POST',
@@ -82,10 +88,10 @@ export const api = {
   getChatHistory: (slug: string, limit = 100, sessionId?: string) =>
     request<ChatHistoryMessage[]>(`/books/${slug}/chat?limit=${limit}${sessionId ? `&sessionId=${encodeURIComponent(sessionId)}` : ''}`),
 
-  saveChatMessage: (slug: string, role: string, content: string, thinking?: string) =>
+  saveChatMessage: (slug: string, role: string, content: string, thinking?: string, sessionId?: string) =>
     request<{ id: number }>(`/books/${slug}/chat`, {
       method: 'POST',
-      body: JSON.stringify({ role, content, thinking: thinking || null }),
+      body: JSON.stringify({ role, content, thinking: thinking || null, sessionId: sessionId || null }),
     }),
 
   clearChatHistory: (slug: string, sessionId?: string) =>
@@ -96,6 +102,12 @@ export const api = {
   abortChat: (slug: string) =>
     request<{ aborted: boolean; lastUserMessage?: string }>(`/books/${slug}/chat/abort`, {
       method: 'POST',
+    }),
+
+  abortKnowledgeChat: (sessionId: string) =>
+    request<{ aborted: boolean }>('/knowledge/chat/abort', {
+      method: 'POST',
+      body: JSON.stringify({ sessionId }),
     }),
 
   getLastUserMessage: (slug: string) =>

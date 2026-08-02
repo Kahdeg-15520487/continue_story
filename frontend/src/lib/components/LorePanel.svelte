@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { marked } from 'marked';
   import { api } from '$lib/api';
+  import { renderMarkdown } from '$lib/markdown';
   import type { WikiCategory, WikiEntity } from '$lib/types';
 
   let { slug }: { slug: string } = $props();
@@ -15,15 +15,23 @@
   let loading = $state(false);
   let generating = $state(false);
   let wikiError = $state('');
+  let editing = $state(false);
+  let editContent = $state('');
+  let savingEdit = $state(false);
+  let filter = $state('');
+
+  let filteredCategories = $derived.by(() => {
+    const q = filter.trim().toLowerCase();
+    if (!q) return categories;
+    return categories
+      .map(cat => ({ ...cat, entities: cat.entities.filter(e => e.name.toLowerCase().includes(q)) }))
+      .filter(cat => cat.entities.length > 0);
+  });
 
   const categoryIcons: Record<string, string> = {
     characters: '👤',
     locations: '📍',
   };
-
-  function renderMarkdown(md: string) {
-    renderedHtml = marked.parse(md, { async: false }) as string;
-  }
 
   async function loadIndex() {
     try {
@@ -37,37 +45,45 @@
   }
 
   async function selectEntity(cat: string, entity: WikiEntity) {
+    if (editing && !confirm('Discard unsaved changes?')) return;
+    editing = false;
     loading = true;
     selectedCategory = cat;
     selectedEntity = entity.file;
     content = '';
     renderedHtml = '';
+    wikiError = '';
     try {
       const parts = entity.file.split('/');
       const result = await api.getWikiEntity(slug, parts[0], parts[1]);
       content = result.content;
-      renderMarkdown(content);
+      renderedHtml = renderMarkdown(content);
     } catch (err: any) {
-      content = `Error: ${err.message}`;
+      wikiError = `Failed to load entity: ${err.message}`;
       renderedHtml = '';
+      content = '';
     } finally {
       loading = false;
     }
   }
 
   async function selectSummary() {
+    if (editing && !confirm('Discard unsaved changes?')) return;
+    editing = false;
     loading = true;
     selectedCategory = 'summary';
     selectedEntity = 'summary';
     content = '';
     renderedHtml = '';
+    wikiError = '';
     try {
       const result = await api.getWikiSummary(slug);
       content = result.content;
-      renderMarkdown(content);
+      renderedHtml = renderMarkdown(content);
     } catch (err: any) {
-      content = `Error: ${err.message}`;
+      wikiError = `Failed to load summary: ${err.message}`;
       renderedHtml = '';
+      content = '';
     } finally {
       loading = false;
     }
@@ -99,6 +115,35 @@
   }
 
   onMount(loadIndex);
+
+  function startEdit() {
+    if (!selectedCategory || !selectedEntity) return;
+    editContent = content;
+    editing = true;
+  }
+
+  async function saveEdit() {
+    if (!selectedCategory || !selectedEntity || savingEdit) return;
+    savingEdit = true;
+    try {
+      const [cat, file] = selectedEntity === 'summary' ? ['root', 'summary.md'] : selectedEntity.split('/');
+      await api.saveWikiEntity(slug, cat, file, editContent);
+      content = editContent;
+      renderedHtml = renderMarkdown(content);
+      editing = false;
+      await refresh();
+    } catch (err: any) {
+      wikiError = `Failed to save: ${err.message}`;
+    } finally {
+      savingEdit = false;
+    }
+  }
+
+  async function refresh() {
+    await loadIndex();
+  }
+
+  export { refresh };
 </script>
 
 <div class="wiki-panel">
@@ -117,7 +162,16 @@
     {:else}
       <!-- Left column: entity list -->
       <div class="wiki-list">
-        {#each categories as cat}
+        {#if categories.length > 0}
+          <input
+            class="wiki-filter"
+            type="text"
+            placeholder="Search..."
+            bind:value={filter}
+            onkeydown={(e) => { if (e.key === 'Escape') filter = ''; }}
+          />
+        {/if}
+        {#each filteredCategories as cat}
           {#if cat.entities.length > 0}
             <div class="category">
               <div class="category-header">
@@ -152,14 +206,29 @@
 
       <!-- Right column: entity detail -->
       <div class="wiki-detail">
-        {#if loading}
-          <p class="loading">Loading...</p>
-        {:else if renderedHtml}
-          <div class="wiki-rendered">{@html renderedHtml}</div>
-        {:else if selectedEntity}
-          <p class="loading">Select an entity to view.</p>
+        {#if editing && selectedEntity}
+          <div class="wiki-editor">
+            <div class="wiki-editor-toolbar">
+              <button class="btn-edit" onclick={saveEdit} disabled={savingEdit}>{savingEdit ? 'Saving...' : '💾 Save'}</button>
+              <button class="btn-edit" onclick={() => editing = false}>Cancel</button>
+            </div>
+            <textarea bind:value={editContent}></textarea>
+          </div>
         {:else}
-          <p class="loading">Select an entity from the list.</p>
+          {#if loading}
+            <p class="loading">Loading...</p>
+          {:else if renderedHtml}
+            <div class="wiki-rendered">
+              <div class="wiki-toolbar">
+                <button class="btn-edit" onclick={startEdit} title="Edit raw markdown">✏️ Edit</button>
+              </div>
+              {@html renderedHtml}
+            </div>
+          {:else if selectedEntity}
+            <p class="loading">Select an entity to view.</p>
+          {:else}
+            <p class="loading">Select an entity from the list.</p>
+          {/if}
         {/if}
       </div>
     {/if}
@@ -225,6 +294,22 @@
     border-right: 1px solid var(--border);
     overflow-y: auto;
     padding: 8px 0;
+  }
+
+  .wiki-filter {
+    width: calc(100% - 24px);
+    margin: 0 12px 8px;
+    padding: 4px 8px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 12px;
+    outline: none;
+  }
+
+  .wiki-filter:focus {
+    border-color: var(--accent);
   }
 
   .category {
@@ -343,6 +428,61 @@
     border-radius: 6px;
     font-size: 12px;
     margin: 12px 16px;
+  }
+
+  .wiki-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 8px;
+  }
+
+  .wiki-editor {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    height: 100%;
+  }
+
+  .wiki-editor-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .wiki-editor textarea {
+    flex: 1;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border: none;
+    padding: 16px;
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    resize: none;
+    outline: none;
+  }
+
+  .btn-edit {
+    padding: 4px 12px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 12px;
+  }
+
+  .btn-edit:hover:not(:disabled) {
+    border-color: var(--accent);
+    color: var(--text-primary);
+  }
+
+  .btn-edit:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   .generating-banner {

@@ -3,6 +3,7 @@
   import { goto } from '$app/navigation';
   import BookList from '$lib/components/BookList.svelte';
   import { api } from '$lib/api';
+  import { toastError } from '$lib/toast.svelte.ts';
   import type { BookSummary } from '$lib/types';
 
   const ACCEPTED = '.epub,.pdf,.docx,.doc,.txt,.html,.htm,.pptx,.xlsx,.xls,.csv,.ipynb,.md';
@@ -13,11 +14,18 @@
   let uploading = $state(false);
   let uploadProgress = $state(0);
   let uploadError = $state('');
+  let loadError = $state('');
+  let showNewBookPrompt = $state(false);
+  let newBookTitle = $state('');
+  let creatingEmpty = $state(false);
 
   async function loadBooks() {
+    loading = true;
+    loadError = '';
     try {
       books = await api.listBooks();
-    } catch (err) {
+    } catch (err: any) {
+      loadError = err.message || 'Failed to load books';
       console.error('Failed to load books:', err);
     } finally {
       loading = false;
@@ -72,17 +80,23 @@
       goto(`/books/${book.slug}`);
     } catch (err: any) {
       uploadError = err.message || 'Upload failed';
+      toastError(uploadError);
       uploading = false;
       await loadBooks();
     }
   }
 
   async function createEmptyBook() {
+    if (!newBookTitle.trim() || creatingEmpty) return;
+    creatingEmpty = true;
     try {
-      const book = await api.createBook({ title: 'Untitled' });
+      const book = await api.createBook({ title: newBookTitle.trim() });
       goto(`/books/${book.slug}`);
     } catch (err: any) {
       uploadError = err.message || 'Failed to create book';
+      toastError(uploadError);
+    } finally {
+      creatingEmpty = false;
     }
   }
 
@@ -102,12 +116,33 @@
   <aside class="sidebar">
     <div class="sidebar-header">
       <h1>Library</h1>
-      <button class="new-book-btn" onclick={createEmptyBook}>+ Empty Book</button>
+      <button class="new-book-btn" onclick={() => showNewBookPrompt = !showNewBookPrompt}>+ Empty Book</button>
     </div>
+    {#if showNewBookPrompt}
+      <div class="new-book-form">
+        <input
+          type="text"
+          placeholder="Book title..."
+          bind:value={newBookTitle}
+          autofocus
+          onkeydown={(e) => {
+            if (e.key === 'Enter') createEmptyBook();
+            if (e.key === 'Escape') { showNewBookPrompt = false; newBookTitle = ''; }
+          }}
+        />
+        <button onclick={createEmptyBook} disabled={creatingEmpty || !newBookTitle.trim()}>Create</button>
+        <button onclick={() => { showNewBookPrompt = false; newBookTitle = ''; }} title="Cancel">✕</button>
+      </div>
+    {/if}
     <a href="/knowledge" class="kb-link">🧠 Knowledge Base</a>
 
     {#if loading}
       <p class="loading">Loading...</p>
+    {:else if loadError}
+      <div class="sidebar-error">
+        <p>{loadError}</p>
+        <button class="retry-btn" onclick={loadBooks}>Retry</button>
+      </div>
     {:else}
       <BookList {books} />
     {/if}
@@ -206,6 +241,45 @@
     transition: color 0.2s, background 0.2s;
   }
 
+  .new-book-form {
+    display: flex;
+    gap: 4px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .new-book-form input {
+    flex: 1;
+    min-width: 0;
+    padding: 4px 8px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 12px;
+    outline: none;
+  }
+
+  .new-book-form button {
+    padding: 4px 8px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-secondary);
+    font-size: 11px;
+    cursor: pointer;
+  }
+
+  .new-book-form button:hover:not(:disabled) {
+    border-color: var(--accent);
+    color: var(--text-primary);
+  }
+
+  .new-book-form button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
   .kb-link:hover {
     color: var(--text-primary);
     background: var(--bg-tertiary);
@@ -214,6 +288,30 @@
   .loading {
     padding: 16px;
     color: var(--text-secondary);
+  }
+
+  .sidebar-error {
+    padding: 16px;
+    color: var(--error);
+    font-size: 13px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .retry-btn {
+    padding: 4px 12px;
+    font-size: 12px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-primary);
+    cursor: pointer;
+  }
+
+  .retry-btn:hover {
+    border-color: var(--accent);
   }
 
   .main-content {
@@ -342,6 +440,8 @@
     color: #f97583;
     border-radius: 8px;
     font-size: 13px;
-    white-space: nowrap;
+    max-width: min(600px, 90vw);
+    text-align: center;
+    overflow-wrap: anywhere;
   }
 </style>

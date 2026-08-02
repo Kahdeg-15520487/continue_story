@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { api } from '$lib/api';
-  import { marked } from 'marked';
+  import { renderMarkdown } from '$lib/markdown';
   import { describeToolActivity } from '$lib/tool-labels';
 
   let {
@@ -18,7 +18,7 @@
     mode?: 'book' | 'knowledge';
   } = $props();
 
-  let messages: Array<{ role: 'user' | 'assistant'; text: string; thinking?: string }> = $state([]);
+  let messages: Array<{ role: 'user' | 'assistant'; text: string; thinking?: string; createdAt?: number }> = $state([]);
   let input = $state('');
   let streaming = $state(false);
   let currentResponse = $state('');
@@ -31,11 +31,55 @@
   let completedTools = $state<Array<{ name: string; args: any; result?: string; isError: boolean; id: number }>>([]);
   let toolIdCounter = 0;
 
+  // Debounce the markdown re-render of the streaming response
+  let displayResponse = $state('');
+  let renderTimer: ReturnType<typeof setTimeout> | null = null;
+
+  $effect(() => {
+    const raw = currentResponse;
+    if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
+    if (!raw) { displayResponse = ''; return; }
+    renderTimer = setTimeout(() => { displayResponse = raw; }, 120);
+  });
+
+  let copiedText = $state<string | null>(null);
+  let copyTimer: ReturnType<typeof setTimeout> | null = null;
+  let textareaEl: HTMLTextAreaElement | null = null;
+
+  function formatTime(ts?: number): string {
+    if (!ts) return '';
+    const diff = Date.now() - ts;
+    if (diff < 60_000) return 'just now';
+    if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
+    return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  async function copyMessage(text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      copiedText = text;
+      if (copyTimer) clearTimeout(copyTimer);
+      copyTimer = setTimeout(() => { copiedText = null; }, 1500);
+    } catch {
+      // Clipboard unavailable
+    }
+  }
+
+  function autoResize() {
+    const el = textareaEl;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 160) + 'px';
+  }
+
   $effect(() => {
     const _msgs = messages;
     const _resp = currentResponse;
-    if (chatContainer) {
-      chatContainer.scrollTop = chatContainer.scrollHeight;
+    const el = chatContainer;
+    if (el) {
+      // Only auto-scroll when the user is already near the bottom
+      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+      if (nearBottom) el.scrollTop = el.scrollHeight;
     }
   });
 
@@ -49,10 +93,11 @@
       }
 
       try {
-        const history = await api.getChatHistory('__shared__', 100);
+        const history = await api.getChatHistory('__shared__', 100, currentSessionId ?? undefined);
         messages = history.map(m => ({
           role: m.role as 'user' | 'assistant',
           text: m.content,
+          createdAt: Date.parse(m.createdAt) || undefined,
         }));
       } catch {
         // No history yet
@@ -66,10 +111,11 @@
       }
 
       try {
-        const history = await api.getChatHistory(slug, 100);
+        const history = await api.getChatHistory(slug, 100, currentSessionId ?? undefined);
         messages = history.map(m => ({
           role: m.role as 'user' | 'assistant',
           text: m.content,
+          createdAt: Date.parse(m.createdAt) || undefined,
         }));
       } catch {
         // No history yet
@@ -82,18 +128,14 @@
     if (!msg || streaming) return;
 
     chatError = '';
-    messages = [...messages, { role: 'user', text: msg }];
+    messages = [...messages, { role: 'user', text: msg, createdAt: Date.now() }];
     input = '';
+    if (textareaEl) textareaEl.style.height = 'auto';
     streaming = true;
     currentResponse = '';
     thinkingText = '';
     activeTools = [];
     completedTools = [];
-
-    // Save user message to DB
-    if (mode === 'knowledge') {
-      api.saveChatMessage('__shared__', 'user', msg).catch(() => {});
-    }
 
     if (mode === 'knowledge') {
       if (!currentSessionId) {
@@ -111,14 +153,16 @@
           }
         }
       }
+      // Save user message to DB (session must exist first so history is scoped)
+      api.saveChatMessage('__shared__', 'user', msg, undefined, currentSessionId ?? undefined).catch(() => {});
       abortController = api.knowledgeChat(
         msg,
         currentSessionId!,
         (chunk) => { currentResponse += chunk; },
         () => {
           if (currentResponse) {
-            messages = [...messages, { role: 'assistant', text: currentResponse, thinking: thinkingText || undefined }];
-            api.saveChatMessage('__shared__', 'assistant', currentResponse, thinkingText || undefined).catch(() => {});
+            messages = [...messages, { role: 'assistant', text: currentResponse, thinking: thinkingText || undefined, createdAt: Date.now() }];
+            api.saveChatMessage('__shared__', 'assistant', currentResponse, thinkingText || undefined, currentSessionId ?? undefined).catch(() => {});
           }
           currentResponse = '';
           thinkingText = '';
@@ -126,7 +170,18 @@
           abortController = null;
           onResponseDone?.();
         },
-        (err) => { chatError = err; streaming = false; abortController = null; },
+        (err) => {
+          chatError = err;
+          if (currentResponse) {
+            const partial = currentResponse + '\n\n_[Stopped due to error]_';
+            messages = [...messages, { role: 'assistant', text: partial, thinking: thinkingText || undefined, createdAt: Date.now() }];
+            api.saveChatMessage('__shared__', 'assistant', partial, thinkingText || undefined, currentSessionId ?? undefined).catch(() => {});
+          }
+          currentResponse = '';
+          thinkingText = '';
+          streaming = false;
+          abortController = null;
+        },
         (thinking) => { thinkingText += thinking; },
         (toolName, args) => {
           const id = ++toolIdCounter;
@@ -151,14 +206,22 @@
         (chunk) => { currentResponse += chunk; },
         () => {
           if (currentResponse) {
-            messages = [...messages, { role: 'assistant', text: currentResponse, thinking: thinkingText || undefined }];
+            messages = [...messages, { role: 'assistant', text: currentResponse, thinking: thinkingText || undefined, createdAt: Date.now() }];
           }
           currentResponse = '';
           thinkingText = '';
           streaming = false;
           onResponseDone?.();
         },
-        (err) => { chatError = err; streaming = false; },
+        (err) => {
+          chatError = err;
+          if (currentResponse) {
+            messages = [...messages, { role: 'assistant', text: currentResponse + '\n\n_[Stopped due to error]_', thinking: thinkingText || undefined, createdAt: Date.now() }];
+          }
+          currentResponse = '';
+          thinkingText = '';
+          streaming = false;
+        },
         (thinking) => { thinkingText += thinking; },
         (toolName, args) => {
           const id = ++toolIdCounter;
@@ -184,13 +247,21 @@
     if (!streaming) return;
     try {
       if (mode === 'knowledge') {
+        // Abort the agent session server-side, not just the fetch
+        if (currentSessionId) {
+          await api.abortKnowledgeChat(currentSessionId).catch(() => {});
+        }
         abortController?.abort();
         abortController = null;
       } else {
         await api.abortChat(slug);
       }
       if (currentResponse) {
-        messages = [...messages, { role: 'assistant', text: currentResponse + '\n\n_[Stopped]_', thinking: thinkingText || undefined }];
+        const stopped = currentResponse + '\n\n_[Stopped]_';
+        messages = [...messages, { role: 'assistant', text: stopped, thinking: thinkingText || undefined, createdAt: Date.now() }];
+        if (mode === 'knowledge') {
+          api.saveChatMessage('__shared__', 'assistant', stopped, thinkingText || undefined, currentSessionId ?? undefined).catch(() => {});
+        }
       }
       currentResponse = '';
       thinkingText = '';
@@ -212,7 +283,12 @@
       if (messages.length > 0 && messages[messages.length - 1].role === 'assistant') {
         messages = messages.slice(0, -1);
       }
-      messages = [...messages, { role: 'user', text: msg }];
+      const last = messages[messages.length - 1];
+      if (last && last.role === 'user' && last.text === msg) {
+        // Replace the duplicate user bubble instead of appending another
+        messages = messages.slice(0, -1);
+      }
+      messages = [...messages, { role: 'user', text: msg, createdAt: Date.now() }];
       streaming = true;
       currentResponse = '';
       thinkingText = '';
@@ -225,14 +301,22 @@
         (chunk) => { currentResponse += chunk; },
         () => {
           if (currentResponse) {
-            messages = [...messages, { role: 'assistant', text: currentResponse, thinking: thinkingText || undefined }];
+            messages = [...messages, { role: 'assistant', text: currentResponse, thinking: thinkingText || undefined, createdAt: Date.now() }];
           }
           currentResponse = '';
           thinkingText = '';
           streaming = false;
           onResponseDone?.();
         },
-        (err) => { chatError = err; streaming = false; },
+        (err) => {
+          chatError = err;
+          if (currentResponse) {
+            messages = [...messages, { role: 'assistant', text: currentResponse + '\n\n_[Stopped due to error]_', thinking: thinkingText || undefined, createdAt: Date.now() }];
+          }
+          currentResponse = '';
+          thinkingText = '';
+          streaming = false;
+        },
         (thinking) => { thinkingText += thinking; },
         (toolName, args) => {
           const id = ++toolIdCounter;
@@ -292,10 +376,6 @@
       chatError = '';
     } catch (err: any) { chatError = err.message; }
   }
-
-  function renderMarkdown(text: string): string {
-    return marked.parse(text, { async: false }) as string;
-  }
 </script>
 
 <div class="chat-panel">
@@ -309,14 +389,19 @@
     </div>
   </div>
 
-  <div class="messages" bind:this={chatContainer}>
+  <div class="messages" bind:this={chatContainer} aria-live="polite">
     {#if messages.length === 0 && !streaming}
       <p class="empty-hint">{mode === 'knowledge' ? 'Ask the research assistant...' : 'Ask a question about this book...'}</p>
     {/if}
 
     {#each messages as msg}
       <div class="message" class:user={msg.role === 'user'} class:assistant={msg.role === 'assistant'}>
-        <div class="message-role">{msg.role === 'user' ? 'You' : 'AI'}</div>
+        <div class="message-role">
+          {msg.role === 'user' ? 'You' : 'AI'}
+          {#if msg.createdAt}
+            <span class="message-time">{formatTime(msg.createdAt)}</span>
+          {/if}
+        </div>
         {#if msg.role === 'assistant' && msg.thinking}
           <details class="thinking-section thinking-done">
             <summary class="thinking-summary">Thought process ({msg.thinking.length} chars)</summary>
@@ -325,6 +410,9 @@
         {/if}
         {#if msg.role === 'assistant'}
           <div class="message-text markdown">{@html renderMarkdown(msg.text)}</div>
+          <button class="copy-btn" onclick={() => copyMessage(msg.text)} title="Copy message">
+            {copiedText === msg.text ? '✓ Copied' : '📋'}
+          </button>
         {:else}
           <div class="message-text">{msg.text}</div>
         {/if}
@@ -376,10 +464,10 @@
       </div>
     {/if}
 
-    {#if streaming && currentResponse}
+    {#if streaming && displayResponse}
       <div class="message assistant">
         <div class="message-role">AI</div>
-        <div class="message-text markdown">{@html renderMarkdown(currentResponse)}<span class="cursor">|</span></div>
+        <div class="message-text markdown">{@html renderMarkdown(displayResponse)}<span class="cursor">|</span></div>
       </div>
     {/if}
 
@@ -390,10 +478,12 @@
 
   <form class="input-form" onsubmit={(e) => { e.preventDefault(); send(); }}>
     <textarea
+      bind:this={textareaEl}
       bind:value={input}
       placeholder={mode === 'knowledge' ? 'Ask the research assistant...' : 'Ask about the book...'}
       disabled={streaming}
       onkeydown={handleKeydown}
+      oninput={autoResize}
       rows="2"
     ></textarea>
     <div class="input-actions">
@@ -401,8 +491,8 @@
         Send
       </button>
       {#if streaming}
-        <button type="button" class="btn btn-stop" onclick={stop}>⏹ Stop</button>
-      {:else if messages.length > 0}
+        <button type="button" class="btn btn-stop" onclick={stop} title="Stops the response and resets the conversation context">⏹ Stop</button>
+      {:else if mode === 'book' && messages.length > 0}
         <button type="button" class="btn btn-retry" onclick={retry}>↻ Retry</button>
       {/if}
     </div>
@@ -424,6 +514,9 @@
   .message.user { background: var(--bg-tertiary); margin-left: 32px; }
   .message.assistant { background: #1a2332; margin-right: 32px; }
   .message-role { font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px; text-transform: uppercase; }
+  .message-time { font-weight: 400; opacity: 0.6; margin-left: 6px; font-size: 10px; text-transform: none; }
+  .copy-btn { margin-top: 4px; background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 11px; padding: 2px 4px; border-radius: 4px; }
+  .copy-btn:hover { color: var(--text-primary); background: var(--bg-tertiary); }
   .message-text { white-space: pre-wrap; word-break: break-word; }
   .thinking-section { margin-top: 4px; }
   .thinking-summary { display: flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 12px; cursor: pointer; }
