@@ -44,14 +44,15 @@ spec:
               value: "10"
             - name: SEARXNG_URL
               value: "http://searxng:8080"
-            # LLM provider keys are injected separately (not in git):
-            #   kubectl create secret generic agent-keys -n continue-story \
-            #     --from-literal=ANTHROPIC_API_KEY=... --from-literal=OPENAI_API_KEY=... ...
-            # and add them to envFrom below when present.
-            # envFrom:
-            #   - secretRef:
-            #       name: agent-keys
-            #       optional: true
+          # LLM provider keys — created imperatively (not in git):
+          #   kubectl create secret generic agent-keys -n continue-story \
+          #     --from-literal=DEEPSEEK_API_KEY=... \
+          #     --from-literal=OPENAI_API_KEY=... \
+          #     --from-literal=OPENROUTER_API_KEY=...
+          envFrom:
+            - secretRef:
+                name: agent-keys
+                optional: true
           volumeMounts:
             - name: library
               mountPath: /library
