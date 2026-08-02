@@ -1,0 +1,27 @@
+# Shared storage — local-path (RWO).
+# api + agent are pinned to the same node (k3sagent01) via nodeSelector so they can
+# both mount the /library PVC. If you need node failover, replace with an RWX provider
+# (e.g. in-cluster NFS) and drop the nodeSelector.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: library-data
+  namespace: continue-story
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sqlite-data
+  namespace: continue-story
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 2Gi

@@ -1,0 +1,66 @@
+# Frontend — SvelteKit node server (adapter-node), production image.
+# /api requests are routed by the IngressRoute directly to the api service.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: continue-story
+  labels:
+    app.kubernetes.io/name: continue-story
+    app.kubernetes.io/component: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: frontend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: frontend
+    spec:
+      imagePullSecrets:
+        - name: ghcr-auth
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+      containers:
+        - name: frontend
+          image: ghcr.io/kahdeg-15520487/story-engine-frontend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+          env:
+            - name: PORT
+              value: "3000"
+            - name: ORIGIN
+              value: "https://cs.minhnguyenle.work"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: continue-story
+spec:
+  selector:
+    app.kubernetes.io/component: frontend
+  ports:
+    - port: 3000
+      targetPort: 3000

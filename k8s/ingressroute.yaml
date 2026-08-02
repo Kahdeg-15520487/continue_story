@@ -1,0 +1,30 @@
+# cs.minhnguyenle.work — Traefik IngressRoute
+#   /api/*  → api:5000 (SSE chat, uploads, CRUD)
+#   /*      → frontend:3000 (SvelteKit node server)
+# TLS: wildcard-minhnguyenle-work-tls (cert-manager, kube-system)
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: continue-story
+  namespace: continue-story
+spec:
+  entryPoints: [websecure]
+  routes:
+    - kind: Rule
+      match: Host(`cs.minhnguyenle.work`) && PathPrefix(`/api`)
+      middlewares:
+        - name: strip-auth
+        - name: authelia-forwardauth
+      services:
+        - name: api
+          port: 5000
+    - kind: Rule
+      match: Host(`cs.minhnguyenle.work`)
+      middlewares:
+        - name: strip-auth
+        - name: authelia-forwardauth
+      services:
+        - name: frontend
+          port: 3000
+  tls:
+    secretName: wildcard-minhnguyenle-work-tls

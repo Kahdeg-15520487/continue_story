@@ -1,0 +1,6 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: continue-story
+  labels:
+    app.kubernetes.io/name: continue-story
