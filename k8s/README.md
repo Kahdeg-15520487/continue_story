@@ -6,12 +6,17 @@
 ## Manual bootstrap (one-time, not in git)
 
 ```bash
-# 1. GHCR image pull secret (same one spf-mmo uses):
+# 1. GHCR image pull secret (same one spf-mmo uses — or from local docker login):
 kubectl get secret ghcr-auth -n spf-mmo -o yaml \
   | sed 's/namespace: spf-mmo/namespace: continue-story/' \
   | kubectl apply -f -
 
-# 2. Optional LLM provider keys (the agent env currently mirrors local
+# 2. Wildcard TLS secret (Traefik resolves secretName in the route's namespace):
+kubectl get secret wildcard-minhnguyenle-work-tls -n default -o yaml \
+  | sed 's/namespace: default/namespace: continue-story/' \
+  | kubectl apply -f -
+
+# 3. Optional LLM provider keys (the agent env currently mirrors local
 #    docker-compose: no keys set):
 kubectl create secret generic agent-keys -n continue-story \
   --from-literal=ANTHROPIC_API_KEY=... \
@@ -21,6 +26,21 @@ kubectl create secret generic agent-keys -n continue-story \
   --from-literal=GOOGLE_API_KEY=... \
   --from-literal=OPENAI_BASE_URL=...
 # then uncomment envFrom in k8s/agent.yaml
+```
+
+## SSO / Authelia
+
+`cs.minhnguyenle.work` is registered in the Authelia config (k3s_lab →
+`authelia/configuration.yml`): one_factor policy + a session cookie entry for
+the `.work` domain (authelia_url `https://auth.minhnguyenle.work`, which is the
+same Authelia instance behind the `auth.minhnguyenle.net` IngressRoute).
+The `authelia-config` ConfigMap is managed out-of-band (not in git):
+
+```bash
+kubectl create configmap authelia-config -n authelia \
+  --from-file=configuration.yml=<k3s_lab checkout>/authelia/configuration.yml \
+  --dry-run=client -o yaml | kubectl apply -f -
+kubectl rollout restart deployment authelia -n authelia
 ```
 
 ## Layout
