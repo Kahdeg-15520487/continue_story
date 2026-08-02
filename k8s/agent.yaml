@@ -39,7 +39,8 @@ spec:
             - name: PI_CWD
               value: "/library"
             - name: PI_MODEL
-              value: "deepseek-v4-flash"
+              # must be "provider/model-id" — index.ts splits on '/' ("deepseek-v4-flash" alone resolves to no model)
+              value: "deepseek/deepseek-v4-flash"
             - name: MAX_SESSIONS
               value: "10"
             - name: SEARXNG_URL
