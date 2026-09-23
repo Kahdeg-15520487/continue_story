@@ -1,7 +1,7 @@
 # cs.minhnguyenle.work — Traefik IngressRoute
 #   /api/*  → api:5000 (SSE chat, uploads, CRUD)
 #   /*      → frontend:3000 (SvelteKit node server)
-# TLS: wildcard-minhnguyenle-work-tls (cert-manager, kube-system)
+# TLS: inherited from the cluster default cert (TLSStore kube-system/default)
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
@@ -26,5 +26,7 @@ spec:
       services:
         - name: frontend
           port: 3000
-  tls:
-    secretName: wildcard-minhnguyenle-work-tls
+  # No tls.secretName on purpose: inherits the cert-manager-managed cluster default
+  # wildcard cert from TLSStore kube-system/default (covers *.minhnguyenle.work).
+  # Per-namespace copies are snapshots that never renew -> expired cert served.
+
