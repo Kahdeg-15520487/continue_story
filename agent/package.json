@@ -8,9 +8,9 @@
     "dev": "npx tsx watch src/index.ts"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "^0.74.0",
-    "@earendil-works/pi-ai": "^0.74.0",
-    "@earendil-works/pi-coding-agent": "^0.74.0",
+    "@earendil-works/pi-agent-core": "^0.87.1",
+    "@earendil-works/pi-ai": "^0.87.1",
+    "@earendil-works/pi-coding-agent": "^0.87.1",
     "@sinclair/typebox": "^0.34.0",
     "tsx": "^4.0.0",
     "@types/node": "^22.0.0"

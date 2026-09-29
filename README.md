@@ -134,7 +134,7 @@ The agent's system prompt includes:
 | `GOOGLE_API_KEY` | No | — | Google AI API key |
 | `OPENROUTER_API_KEY` | No | — | OpenRouter API key |
 | `DEEPSEEK_API_KEY` | No | — | DeepSeek API key |
-| `PI_MODEL` | Yes | `deepseek/deepseek-v4-flash` | Provider/model identifier (e.g. `openai/gpt-4o`) |
+| `PI_MODEL` | Yes | `deepseek/deepseek-flash` | Provider/model identifier (e.g. `openai/gpt-4o`) |
 | `MAX_SESSIONS` | No | 10 | Max concurrent agent sessions |
 | `SEARXNG_URL` | No | `http://searxng:8080` | SearXNG instance URL |
 

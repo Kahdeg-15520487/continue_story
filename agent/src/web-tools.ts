@@ -47,19 +47,21 @@ function htmlToText(html: string): string {
 
 // ---------- web_search ----------
 
-export const webSearchTool: AgentTool = {
+const webSearchParameters = Type.Object({
+  query: Type.String({ description: "Search query" }),
+  categories: Type.Optional(Type.String({ description: "Search category: general, news, images, it, science, files, music, videos, social media. Default: general" })),
+  language: Type.Optional(Type.String({ description: "Language code, e.g. en, ja, ko, vi. Default: en" })),
+  max_results: Type.Optional(Type.Number({ description: "Maximum results to return. Default: 10" })),
+});
+
+export const webSearchTool: AgentTool<typeof webSearchParameters> = {
   name: "web_search",
   label: "Web Search",
   description:
     "Search the web using SearXNG. Returns a list of results with title, URL, and snippet. " +
     "Use this to research franchises, games, novels, characters, settings, or any topic before writing. " +
     "For deeper research, follow up with web_fetch on promising results.",
-  parameters: Type.Object({
-    query: Type.String({ description: "Search query" }),
-    categories: Type.Optional(Type.String({ description: "Search category: general, news, images, it, science, files, music, videos, social media. Default: general" })),
-    language: Type.Optional(Type.String({ description: "Language code, e.g. en, ja, ko, vi. Default: en" })),
-    max_results: Type.Optional(Type.Number({ description: "Maximum results to return. Default: 10" })),
-  }),
+  parameters: webSearchParameters,
   async execute(_toolCallId, params, _signal) {
     const max = params.max_results || 10;
     const searchParams = new URLSearchParams({ q: params.query, format: "json" });
@@ -104,16 +106,18 @@ export const webSearchTool: AgentTool = {
 
 // ---------- web_fetch ----------
 
-export const webFetchTool: AgentTool = {
+const webFetchParameters = Type.Object({
+  url: Type.String({ description: "URL to fetch" }),
+  max_length: Type.Optional(Type.Number({ description: "Max characters to return. Default: 10000" })),
+});
+
+export const webFetchTool: AgentTool<typeof webFetchParameters> = {
   name: "web_fetch",
   label: "Web Fetch",
   description:
     "Fetch a web page and extract its text content. Use after web_search to read full pages. " +
     "Good for reading wiki pages, articles, reviews, and reference material about franchises/stories.",
-  parameters: Type.Object({
-    url: Type.String({ description: "URL to fetch" }),
-    max_length: Type.Optional(Type.Number({ description: "Max characters to return. Default: 10000" })),
-  }),
+  parameters: webFetchParameters,
   async execute(_toolCallId, params, _signal) {
     const maxLen = params.max_length || 10000;
     let response;

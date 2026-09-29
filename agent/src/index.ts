@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "http";
 import { mkdirSync, readdirSync, unlinkSync, rmSync, readFileSync } from "fs";
 import { join } from "path";
 import { Agent, type AgentEvent, type AgentTool } from "@earendil-works/pi-agent-core";
-import { getModel, streamSimpleOpenAICompletions, getEnvApiKey } from "@earendil-works/pi-ai";
+import { getModel, streamSimple, getEnvApiKey } from "@earendil-works/pi-ai/compat";
 import { createCodingTools } from "@earendil-works/pi-coding-agent";
 import { webSearchTool, webFetchTool } from "./web-tools.js";
 
@@ -11,7 +11,7 @@ const MAX_SESSIONS = parseInt(process.env.MAX_SESSIONS || "10");
 
 // ── Model config ────────────────────────────────────────────────────
 
-const PI_MODEL = process.env.PI_MODEL || "";
+const PI_MODEL = process.env.PI_MODEL || "deepseek/deepseek-flash";
 const [PI_PROVIDER, ..._rest] = PI_MODEL.split("/");
 const PI_MODEL_ID = _rest.join("/");
 
@@ -410,7 +410,7 @@ function createAgent(bookSlug: string): Agent {
       thinkingLevel: "off",
       tools: [...createCodingTools(cwd), webSearchTool, webFetchTool],
     },
-    streamFn: streamSimpleOpenAICompletions,
+    streamFn: streamSimple,
     convertToLlm: (messages) => messages as any[],
     getApiKey: (provider: string) => {
       const key = getEnvApiKey(provider);

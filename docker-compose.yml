@@ -70,7 +70,7 @@ services:
       - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
-      - PI_MODEL=${PI_MODEL:-deepseek/deepseek-v4-flash}
+      - PI_MODEL=${PI_MODEL:-deepseek/deepseek-flash}
       - SEARXNG_URL=http://searxng:8080
       - MAX_SESSIONS=${MAX_SESSIONS:-10}
     restart: unless-stopped
