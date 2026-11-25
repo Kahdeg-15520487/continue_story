@@ -1,13 +1,12 @@
-FROM node:22-alpine
+FROM node:22.19-alpine
 WORKDIR /app
-RUN npm install -g @mariozechner/pi-coding-agent
-COPY package.json ./
-RUN npm install
+# pi-durable requires Node >= 22.19 (node:sqlite). The lock file is copied so
+# builds are reproducible; the pi-durable suite is pinned exactly (experimental API).
+COPY package.json package-lock.json ./
+RUN npm ci
 COPY src/ ./src/
 
 # Use existing 'node' user (uid 1000) — same as api container's appuser
-RUN mkdir -p /home/node/.pi/agent && chown -R node:node /home/node/.pi
-
 USER node
 EXPOSE 3001
 CMD ["npx", "tsx", "src/index.ts"]

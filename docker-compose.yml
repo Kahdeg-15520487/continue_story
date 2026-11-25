@@ -60,9 +60,11 @@ services:
       dockerfile: Dockerfile
     volumes:
       - library-data:/library
+      - agent-data:/data
       - ./skills:/skills:ro
     environment:
-      - PI_CWD=/library
+      - LIBRARY_ROOT=/library
+      - DURABLE_DB=/data/durable.sqlite
       - PORT=3001
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
@@ -93,3 +95,4 @@ services:
 volumes:
   library-data:
   sqlite-data:
+  agent-data:

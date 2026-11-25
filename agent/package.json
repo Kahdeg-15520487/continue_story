@@ -8,11 +8,11 @@
     "dev": "npx tsx watch src/index.ts"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "^0.87.1",
-    "@earendil-works/pi-ai": "^0.87.1",
-    "@earendil-works/pi-coding-agent": "^0.87.1",
-    "@sinclair/typebox": "^0.34.0",
-    "tsx": "^4.0.0",
-    "@types/node": "^22.0.0"
+    "@earendil-works/chord": "1.6.0",
+    "@earendil-works/pi-ai": "1.6.0",
+    "@earendil-works/pi-durable": "1.6.0",
+    "@earendil-works/pi-schema": "1.6.0",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.0.0"
   }
 }

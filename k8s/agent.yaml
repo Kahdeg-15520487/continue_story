@@ -37,8 +37,10 @@ spec:
           env:
             - name: PORT
               value: "3001"
-            - name: PI_CWD
+            - name: LIBRARY_ROOT
               value: "/library"
+            - name: DURABLE_DB
+              value: "/data/durable.sqlite"
             - name: PI_MODEL
               # must be "provider/model-id" — index.ts splits on '/' ("deepseek-flash" alone resolves to no model)
               value: "deepseek/deepseek-flash"
@@ -58,6 +60,8 @@ spec:
           volumeMounts:
             - name: library
               mountPath: /library
+            - name: data
+              mountPath: /data
             - name: skills
               mountPath: /skills
               readOnly: true
@@ -83,6 +87,9 @@ spec:
         - name: library
           persistentVolumeClaim:
             claimName: library-data
+        - name: data
+          persistentVolumeClaim:
+            claimName: agent-data
         - name: skills
           configMap:
             name: agent-skills

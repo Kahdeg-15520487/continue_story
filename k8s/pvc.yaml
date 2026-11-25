@@ -25,3 +25,16 @@ spec:
   resources:
     requests:
       storage: 2Gi
+---
+# pi-durable transcript store (node:sqlite). Agent-only, same node pin as library-data.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: agent-data
+  namespace: continue-story
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 5Gi
