@@ -43,7 +43,7 @@
     border-radius: 6px;
     color: var(--text-primary);
     font-size: 13px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 4px 16px rgba(60, 45, 30, 0.16);
     animation: toast-in 0.15s ease-out;
   }
 

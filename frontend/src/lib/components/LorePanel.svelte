@@ -362,7 +362,7 @@
 
   .entity-item.active {
     background: var(--bg-tertiary);
-    border-left: 2px solid #58a6ff;
+    border-left: 2px solid var(--accent);
     padding-left: 26px;
   }
 
@@ -401,18 +401,18 @@
     padding: 8px 12px;
     background: var(--bg-tertiary);
     border-radius: 6px;
-    border-left: 3px solid #58a6ff;
+    border-left: 3px solid var(--accent);
   }
 
   .wiki-rendered :global(p) { margin: 6px 0; }
-  .wiki-rendered :global(strong) { color: #79c0ff; font-weight: 600; }
+  .wiki-rendered :global(strong) { color: var(--accent-hover); font-weight: 600; }
   .wiki-rendered :global(blockquote) {
     margin: 8px 0; padding: 6px 12px; border-left: 3px solid var(--border);
     color: var(--text-secondary); font-size: 12px; background: rgba(110, 118, 129, 0.05); border-radius: 0 4px 4px 0;
   }
   .wiki-rendered :global(ul) { margin: 4px 0; padding-left: 20px; }
   .wiki-rendered :global(li) { margin: 3px 0; }
-  .wiki-rendered :global(li)::marker { color: #58a6ff; }
+  .wiki-rendered :global(li)::marker { color: var(--accent); }
 
   .loading, .empty-hint {
     color: var(--text-secondary);
@@ -422,8 +422,8 @@
   }
 
   .wiki-error {
-    background: #3d1f1f;
-    color: #f97583;
+    background: var(--error-bg);
+    color: var(--error);
     padding: 8px 12px;
     border-radius: 6px;
     font-size: 12px;

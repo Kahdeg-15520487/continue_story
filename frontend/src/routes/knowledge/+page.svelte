@@ -89,26 +89,26 @@
     align-items: center;
     gap: 16px;
     padding: 12px 20px;
-    background: var(--bg-secondary, #161b22);
-    border-bottom: 1px solid var(--border, #30363d);
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
   }
 
   .back-btn {
     padding: 4px 12px;
-    background: var(--bg-tertiary, #21262d);
-    border: 1px solid var(--border, #30363d);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
     border-radius: 6px;
-    color: var(--text-secondary, #8b949e);
+    color: var(--text-secondary);
     cursor: pointer;
     font-size: 13px;
   }
 
-  .back-btn:hover { border-color: var(--accent, #6366f1); color: var(--text-primary, #c9d1d9); }
+  .back-btn:hover { border-color: var(--accent); color: var(--text-primary); }
 
   .knowledge-header h1 {
     font-size: 18px;
     font-weight: 600;
-    color: var(--text-primary, #c9d1d9);
+    color: var(--text-primary);
   }
 
   .knowledge-body {
@@ -120,13 +120,13 @@
   .kb-viewer-pane {
     flex: 1;
     overflow: hidden;
-    border-right: 1px solid var(--border, #30363d);
+    border-right: 1px solid var(--border);
   }
 
   .kb-chat-pane {
     display: flex;
     flex-direction: column;
-    background: var(--bg-primary, #0d1117);
+    background: var(--bg-primary);
   }
 
   .resize-handle {
@@ -150,7 +150,7 @@
 
   .resize-handle:hover,
   .resize-handle:active {
-    background: var(--accent, #58a6ff);
+    background: var(--accent);
   }
 
   @media (max-width: 860px) {

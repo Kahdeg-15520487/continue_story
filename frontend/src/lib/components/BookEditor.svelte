@@ -145,6 +145,7 @@
     max-width: 800px;
     margin: 0 auto;
     color: var(--text-primary);
+    caret-color: var(--text-primary);
     font-size: 16px;
     line-height: 1.7;
   }
@@ -223,5 +224,34 @@
     .milkdown-wrapper :global(.milkdown h1) {
       font-size: 26px;
     }
+  }
+
+  /* Keep the editor readable on the light paper theme (theme-nord ships dark defaults) */
+  .milkdown-wrapper :global(.milkdown a) {
+    color: var(--accent);
+  }
+
+  .milkdown-wrapper :global(.milkdown code) {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+  }
+
+  .milkdown-wrapper :global(.milkdown pre) {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+  }
+
+  .milkdown-wrapper :global(.milkdown blockquote) {
+    border-left: 3px solid var(--border-strong);
+    color: var(--text-secondary);
+  }
+
+  .milkdown-wrapper :global(.milkdown hr) {
+    border-color: var(--border);
+  }
+
+  .milkdown-wrapper :global(.milkdown ::selection) {
+    background: var(--accent-soft);
   }
 </style>

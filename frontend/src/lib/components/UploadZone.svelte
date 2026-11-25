@@ -206,7 +206,7 @@
   }
 
   .btn-clear:hover {
-    color: #f97583;
+    color: var(--error);
   }
 
   .btn-upload {
@@ -252,8 +252,8 @@
   .upload-error {
     margin-top: 12px;
     padding: 8px 12px;
-    background: #3d1f1f;
-    color: #f97583;
+    background: var(--error-bg);
+    color: var(--error);
     border-radius: 6px;
     font-size: 12px;
     overflow-wrap: anywhere;

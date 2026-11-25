@@ -186,7 +186,7 @@
     background: var(--bg-secondary);
     border: 1px solid var(--border);
     border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 4px 12px rgba(60, 45, 30, 0.10);
     transition: opacity 0.15s, transform 0.15s;
   }
 
@@ -230,7 +230,7 @@
   .btn-submit {
     flex: 1;
     padding: 6px 12px;
-    background: var(--accent, #4a9eff);
+    background: var(--accent);
     border: none;
     border-radius: 6px;
     color: #fff;
@@ -279,15 +279,15 @@
   }
 
   .btn-cancel:hover {
-    color: #f97583;
-    border-color: #f97583;
+    color: var(--error);
+    border-color: var(--error);
   }
 
   .edit-error {
     margin-top: 8px;
     padding: 6px 10px;
-    background: #3d1f1f;
-    color: #f97583;
+    background: var(--error-bg);
+    color: var(--error);
     border-radius: 6px;
     font-size: 12px;
   }

@@ -411,7 +411,7 @@
 
   .banner.warn {
     border-color: var(--warning);
-    background: rgba(210, 153, 34, 0.08);
+    background: var(--warning-bg);
     color: var(--warning);
   }
 

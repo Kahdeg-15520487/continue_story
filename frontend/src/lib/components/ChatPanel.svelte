@@ -512,12 +512,12 @@
   .btn-new-session { width: 26px; height: 26px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-tertiary); color: var(--text-secondary); font-size: 16px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.15s; line-height: 1; }
   .btn-new-session:hover { background: var(--bg-hover); color: var(--text-primary); }
   .btn-clear-history { background: none; border: 1px solid var(--border); color: var(--text-secondary); font-size: 11px; padding: 2px 8px; border-radius: 4px; cursor: pointer; }
-  .btn-clear-history:hover { color: #f97583; border-color: #f97583; }
+  .btn-clear-history:hover { color: var(--error); border-color: var(--error); }
   .messages { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 12px; }
   .empty-hint { color: var(--text-secondary); font-size: 13px; text-align: center; padding-top: 24px; }
   .message { padding: 8px 12px; border-radius: 8px; font-size: 13px; line-height: 1.5; }
   .message.user { background: var(--bg-tertiary); margin-left: 32px; }
-  .message.assistant { background: #1a2332; margin-right: 32px; }
+  .message.assistant { background: var(--bg-secondary); margin-right: 32px; }
   .message-role { font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px; text-transform: uppercase; }
   .message-time { font-weight: 400; opacity: 0.6; margin-left: 6px; font-size: 10px; text-transform: none; }
   .copy-btn { margin-top: 4px; background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 11px; padding: 2px 4px; border-radius: 4px; }
@@ -527,18 +527,18 @@
   .thinking-summary { display: flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 12px; cursor: pointer; }
   .thinking-spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .thinking-text { margin-top: 8px; padding: 8px; background: rgba(0,0,0,0.2); border-radius: 4px; font-size: 11px; color: var(--text-secondary); max-height: 200px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; }
-  .tool-block { margin: 6px 0; padding: 6px 10px; background: var(--bg-tertiary, #21262d); border: 1px solid var(--border, #30363d); border-radius: 6px; font-size: 12px; color: var(--text-secondary, #8b949e); }
-  .tool-block.active { border-color: var(--accent, #6366f1); }
-  .tool-block.error { border-color: #f97583; }
+  .thinking-text { margin-top: 8px; padding: 8px; background: rgba(60, 45, 30, 0.08); border-radius: 4px; font-size: 11px; color: var(--text-secondary); max-height: 200px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; }
+  .tool-block { margin: 6px 0; padding: 6px 10px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 6px; font-size: 12px; color: var(--text-secondary); }
+  .tool-block.active { border-color: var(--accent); }
+  .tool-block.error { border-color: var(--error); }
   .tool-header { display: flex; align-items: center; gap: 6px; }
   .tool-label { flex: 1; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .tool-status { font-size: 11px; }
-  .tool-result { margin-top: 6px; padding: 6px; background: var(--bg-primary, #0d1117); border-radius: 4px; max-height: 120px; overflow-y: auto; white-space: pre-wrap; font-size: 11px; }
-  .spinner { display: inline-block; width: 10px; height: 10px; border: 2px solid var(--border, #30363d); border-top-color: var(--accent, #6366f1); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  .tool-result { margin-top: 6px; padding: 6px; background: var(--bg-primary); border-radius: 4px; max-height: 120px; overflow-y: auto; white-space: pre-wrap; font-size: 11px; }
+  .spinner { display: inline-block; width: 10px; height: 10px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
   .cursor { animation: blink 1s step-end infinite; }
   @keyframes blink { 50% { opacity: 0; } }
-  .chat-error { background: #3d1f1f; color: #f97583; padding: 8px 12px; border-radius: 6px; font-size: 12px; }
+  .chat-error { background: var(--error-bg); color: var(--error); padding: 8px 12px; border-radius: 6px; font-size: 12px; }
   .message-text.markdown :global(p) { margin: 0 0 8px; }
   .message-text.markdown :global(p:last-child) { margin-bottom: 0; }
   .message-text.markdown :global(h1) { font-size: 1.4em; font-weight: 700; margin: 12px 0 8px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
@@ -546,8 +546,8 @@
   .message-text.markdown :global(h3) { font-size: 1.1em; font-weight: 600; margin: 8px 0 4px; }
   .message-text.markdown :global(ul), .message-text.markdown :global(ol) { margin: 4px 0; padding-left: 20px; }
   .message-text.markdown :global(li) { margin: 2px 0; }
-  .message-text.markdown :global(code) { background: rgba(0,0,0,0.3); padding: 1px 5px; border-radius: 3px; font-size: 0.9em; font-family: Consolas, Monaco, monospace; }
-  .message-text.markdown :global(pre) { background: rgba(0,0,0,0.3); padding: 10px 12px; border-radius: 6px; overflow-x: auto; margin: 8px 0; }
+  .message-text.markdown :global(code) { background: rgba(60, 45, 30, 0.12); padding: 1px 5px; border-radius: 3px; font-size: 0.9em; font-family: Consolas, Monaco, monospace; }
+  .message-text.markdown :global(pre) { background: rgba(60, 45, 30, 0.12); padding: 10px 12px; border-radius: 6px; overflow-x: auto; margin: 8px 0; }
   .message-text.markdown :global(pre code) { background: none; padding: 0; font-size: 0.85em; }
   .message-text.markdown :global(blockquote) { border-left: 3px solid var(--accent); padding-left: 12px; margin: 8px 0; color: var(--text-secondary); }
   .message-text.markdown :global(strong) { font-weight: 600; }
@@ -556,8 +556,8 @@
   .input-form { flex-shrink: 0; display: flex; align-items: flex-end; gap: 8px; padding: 14px 16px; border-top: 1px solid var(--border); }
   .input-form textarea { flex: 1; min-height: 112px; padding: 12px 14px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 8px; color: var(--text-primary); font-size: 15px; line-height: 1.5; resize: none; font-family: inherit; }
   .btn { min-height: 44px; padding: 10px 18px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-tertiary); color: var(--text-primary); cursor: pointer; font-size: 14px; }
-  .btn-stop { border-color: #da3633; color: #f97583; }
-  .btn-stop:hover { background: #3d1f1f; }
+  .btn-stop { border-color: var(--error); color: var(--error); }
+  .btn-stop:hover { background: var(--error-bg); }
   .btn-retry { color: var(--text-secondary); }
   .btn-retry:hover { color: var(--accent); border-color: var(--accent); }
   .input-actions { display: flex; flex-shrink: 0; gap: 8px; }

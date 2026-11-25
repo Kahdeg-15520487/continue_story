@@ -270,7 +270,7 @@
     background: var(--bg-secondary);
     border: 1px solid var(--border);
     border-radius: 6px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 4px 12px rgba(60, 45, 30, 0.16);
     z-index: 100;
     min-width: 160px;
     padding: 4px;
@@ -351,8 +351,8 @@
   }
 
   .chapter-item.active {
-    background: rgba(88, 166, 255, 0.1);
-    border-left: 3px solid var(--accent, #58a6ff);
+    background: var(--accent-soft);
+    border-left: 3px solid var(--accent);
     padding-left: 9px;
   }
 
@@ -380,7 +380,7 @@
     display: inline;
     background: none;
     border: none;
-    color: #f97583;
+    color: var(--error);
     cursor: pointer;
     padding: 0 4px;
     font-size: 14px;
@@ -415,7 +415,7 @@
   }
 
   .add-chapter input:focus {
-    border-color: var(--accent, #58a6ff);
+    border-color: var(--accent);
   }
 
   .add-chapter button {
@@ -429,7 +429,7 @@
   }
 
   .add-chapter button:hover:not(:disabled) {
-    background: var(--accent, #58a6ff);
+    background: var(--accent);
     color: #fff;
   }
 

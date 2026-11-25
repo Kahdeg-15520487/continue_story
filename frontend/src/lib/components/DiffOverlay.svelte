@@ -170,7 +170,7 @@
   .view-tab.active {
     background: var(--bg-primary);
     color: var(--text-primary);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 1px 3px rgba(60, 45, 30, 0.12);
   }
 
   .diff-stats {
@@ -179,8 +179,8 @@
     font-size: 12px;
   }
 
-  .stat-added { color: #3fb950; }
-  .stat-removed { color: #f85149; }
+  .stat-added { color: var(--success); }
+  .stat-removed { color: var(--error); }
   .stat-label { color: var(--text-secondary); }
 
   .diff-content {
@@ -201,12 +201,12 @@
 
   .diff-line.added {
     background: rgba(46, 160, 67, 0.15);
-    border-left-color: #2ea043;
+    border-left-color: var(--success);
   }
 
   .diff-line.removed {
     background: rgba(248, 81, 73, 0.15);
-    border-left-color: #f85149;
+    border-left-color: var(--error);
   }
 
   .line-num {
@@ -229,7 +229,7 @@
 
   .btn-accept {
     padding: 8px 24px;
-    background: #238636;
+    background: var(--success-strong);
     border: none;
     border-radius: 6px;
     color: #fff;
@@ -240,15 +240,15 @@
   }
 
   .btn-accept:hover {
-    background: #2ea043;
+    background: var(--success);
   }
 
   .btn-reject {
     padding: 8px 24px;
     background: none;
-    border: 1px solid #f85149;
+    border: 1px solid var(--error);
     border-radius: 6px;
-    color: #f85149;
+    color: var(--error);
     font-size: 14px;
     font-weight: 600;
     cursor: pointer;

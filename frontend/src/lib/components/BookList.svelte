@@ -211,8 +211,8 @@
   }
 
   .btn-delete:hover {
-    color: #f97583;
-    background: rgba(249, 117, 131, 0.1);
+    color: var(--error);
+    background: var(--error-bg);
   }
 
   @media (max-width: 760px) {

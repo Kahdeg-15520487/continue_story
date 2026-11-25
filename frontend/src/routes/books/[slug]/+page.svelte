@@ -777,7 +777,7 @@
 
       {#if showLore}
         <div class="resize-handle" role="separator" aria-orientation="vertical" tabindex="0" onmousedown={startResize('lore')} onkeydown={resizeKeydown('lore')}></div>
-        <div class="side-panel" style="width: {loreWidth}px; min-width: {loreWidth}px;">
+        <div class="side-panel wiki-panel" style="width: {loreWidth}px; min-width: {loreWidth}px;">
           <button class="panel-close" onclick={() => setView('write')} aria-label="Close wiki">✕</button>
           <LorePanel bind:this={lorePanel} {slug} />
         </div>
@@ -894,7 +894,7 @@
   .btn.active {
     border-color: var(--accent);
     color: var(--accent);
-    background: rgba(88, 166, 255, 0.1);
+    background: var(--accent-soft);
   }
 
   .main-area {
@@ -924,7 +924,7 @@
   }
 
   .status-message.error {
-    color: #f97583;
+    color: var(--error);
   }
 
   .status-saving {
@@ -1019,7 +1019,7 @@
   }
 
   .job-stat.failed .job-num {
-    color: #f97583;
+    color: var(--error);
   }
 
   .job-num {
@@ -1067,7 +1067,7 @@
 
   .resize-handle:hover,
   .resize-handle:active {
-    background: var(--accent, #58a6ff);
+    background: var(--accent);
   }
 
   .side-panel {
@@ -1085,7 +1085,7 @@
     padding: 6px 16px;
     background: rgba(56, 139, 253, 0.1);
     border-bottom: 1px solid rgba(56, 139, 253, 0.2);
-    color: #79c0ff;
+    color: var(--accent-hover);
     font-size: 12px;
     flex-shrink: 0;
   }
@@ -1094,7 +1094,7 @@
     width: 14px;
     height: 14px;
     border: 2px solid rgba(56, 139, 253, 0.3);
-    border-top-color: #58a6ff;
+    border-top-color: var(--accent);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
     flex-shrink: 0;
@@ -1105,26 +1105,26 @@
     align-items: center;
     gap: 12px;
     padding: 8px 16px;
-    background: rgba(249, 117, 131, 0.1);
-    border-bottom: 1px solid rgba(249, 117, 131, 0.2);
-    color: #f97583;
+    background: var(--error-bg);
+    border-bottom: 1px solid var(--error-bg);
+    color: var(--error);
     font-size: 13px;
   }
 
   .error-banner .btn-retry {
     margin-left: auto;
     padding: 4px 12px;
-    background: rgba(249, 117, 131, 0.15);
-    border: 1px solid rgba(249, 117, 131, 0.3);
+    background: var(--error-bg);
+    border: 1px solid var(--error-bg);
     border-radius: 4px;
-    color: #f97583;
+    color: var(--error);
     cursor: pointer;
     font-size: 12px;
     white-space: nowrap;
   }
 
   .error-banner .btn-retry:hover {
-    background: rgba(249, 117, 131, 0.25);
+    background: var(--error-bg);
   }
 
   .mobile-tabs {
@@ -1136,9 +1136,9 @@
     align-items: center;
     gap: 8px;
     padding: 6px 16px;
-    background: rgba(210, 153, 34, 0.1);
-    border-bottom: 1px solid rgba(210, 153, 34, 0.2);
-    color: #d29922;
+    background: var(--warning-bg);
+    border-bottom: 1px solid var(--warning-bg);
+    color: var(--warning);
     font-size: 12px;
   }
 
@@ -1194,7 +1194,7 @@
       width: 260px;
       min-width: 260px;
       z-index: 25;
-      box-shadow: 8px 0 24px rgba(0, 0, 0, 0.45);
+      box-shadow: 8px 0 24px rgba(60, 45, 30, 0.18);
     }
 
     .main-area.chapters-open > :global(.sidebar) {
@@ -1312,6 +1312,10 @@
 
     .panel-close:hover {
       border-color: var(--accent);
+    }
+
+    :global(.wiki-panel .panel-header) {
+      padding-right: 56px;
     }
 
     .resize-handle {

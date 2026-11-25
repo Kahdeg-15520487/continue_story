@@ -448,8 +448,8 @@
     left: 50%;
     transform: translateX(-50%);
     padding: 8px 16px;
-    background: #3d1f1f;
-    color: #f97583;
+    background: var(--error-bg);
+    color: var(--error);
     border-radius: 8px;
     font-size: 13px;
     max-width: min(600px, 90vw);
@@ -529,7 +529,7 @@
       color: #fff;
       font-size: 28px;
       line-height: 1;
-      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+      box-shadow: 0 6px 20px rgba(60, 45, 30, 0.18);
       cursor: pointer;
     }
 

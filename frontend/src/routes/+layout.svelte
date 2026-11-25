@@ -19,8 +19,8 @@
 
   :global(body) {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: #0d1117;
-    color: #c9d1d9;
+    background: var(--bg-primary);
+    color: var(--text-primary);
   }
 
   .app-layout {
