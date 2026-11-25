@@ -29,7 +29,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: api
-          image: ghcr.io/kahdeg-15520487/story-engine-api:c230766
+          image: ghcr.io/kahdeg-15520487/story-engine-api:b5305c3
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 5000
