@@ -29,3 +29,6 @@ Thumbs.db
 library/*
 !library/.gitkeep
 .pi/
+
+# Phase 0 throwaway spike
+agent/spike/
