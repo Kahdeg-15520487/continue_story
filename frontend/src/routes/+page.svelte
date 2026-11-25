@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import BookList from '$lib/components/BookList.svelte';
+  import { visualViewport } from '$lib/viewport';
   import { api } from '$lib/api';
   import { toastError } from '$lib/toast.svelte.ts';
   import type { BookSummary } from '$lib/types';
@@ -64,6 +65,7 @@
     const target = e.target as HTMLInputElement;
     const file = target.files?.[0];
     if (file) await uploadFile(file);
+    target.value = '';
   }
 
   async function uploadFile(file: File) {
@@ -112,7 +114,7 @@
   ondragleave={() => { dragging = false; }}
 />
 
-<div class="library-page">
+<div class="library-page" use:visualViewport>
   <aside class="sidebar">
     <div class="sidebar-header">
       <h1>Library</h1>
@@ -183,6 +185,11 @@
       {/if}
     </div>
   </main>
+
+  <label class="mobile-add" title="Add a book">
+    ＋
+    <input type="file" accept={ACCEPTED} onchange={handleFileInput} />
+  </label>
 </div>
 
 <style>
@@ -190,6 +197,10 @@
     display: flex;
     width: 100%;
     height: 100vh;
+  }
+
+  .mobile-add {
+    display: none;
   }
 
   .sidebar {
@@ -450,22 +461,80 @@
     .library-page {
       flex-direction: column;
       height: 100dvh;
+      height: var(--vvh, 100dvh);
     }
 
     .sidebar {
       width: 100%;
       min-width: 0;
-      max-height: 42vh;
+      max-height: none;
+      flex: 1;
       border-right: none;
-      border-bottom: 1px solid var(--border);
+      border-bottom: none;
     }
 
     .sidebar-header {
-      padding: 12px 16px;
+      padding: 14px 16px;
+    }
+
+    .sidebar-header h1 {
+      font-size: 22px;
+    }
+
+    .new-book-btn {
+      min-height: 40px;
+      padding: 8px 14px;
+      font-size: 13px;
+    }
+
+    .kb-link {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px;
+      font-size: 15px;
+    }
+
+    .kb-link::after {
+      content: '›';
+      opacity: 0.45;
+      font-size: 18px;
+    }
+
+    .new-book-form {
+      padding: 0 16px 12px;
+    }
+
+    .new-book-form input {
+      min-height: 44px;
+      font-size: 16px;
     }
 
     .main-content {
-      align-items: stretch;
+      display: none;
+    }
+
+    .mobile-add {
+      display: flex;
+      position: fixed;
+      right: 18px;
+      bottom: calc(18px + env(safe-area-inset-bottom));
+      z-index: 20;
+      width: 56px;
+      height: 56px;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      font-size: 28px;
+      line-height: 1;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+      cursor: pointer;
+    }
+
+    .mobile-add input {
+      display: none;
     }
   }
 </style>

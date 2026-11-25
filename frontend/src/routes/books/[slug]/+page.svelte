@@ -21,6 +21,8 @@
   let isEditing = $state(false);
   let showChat = $state(false);
   let showLore = $state(false);
+  type MobileView = 'write' | 'chapters' | 'wiki' | 'chat';
+  let mobileView = $state<MobileView>('write');
 
   let editingTitle = $state(false);
   let titleInput = $state('');
@@ -40,8 +42,18 @@
   onMount(() => {
     if (typeof window !== 'undefined' && window.innerWidth < 900) {
       sidebarCollapsed = true;
+      showChat = false;
+      showLore = false;
+      mobileView = 'write';
     }
   });
+
+  function setView(view: MobileView) {
+    mobileView = view;
+    showChat = view === 'chat';
+    showLore = view === 'wiki';
+    sidebarCollapsed = view !== 'chapters';
+  }
 
   async function saveTitle() {
     if (!book || !titleInput.trim() || titleInput.trim() === book.title) {
@@ -104,6 +116,7 @@
   let PANEL_KEY = $derived(`book-ui-${slug}`);
 
   function loadPanelState() {
+    if (typeof window !== 'undefined' && window.innerWidth < 900) return;
     try {
       const raw = localStorage.getItem(PANEL_KEY);
       if (!raw) return;
@@ -115,6 +128,10 @@
       if (typeof s.sidebarCollapsed === 'boolean') sidebarCollapsed = s.sidebarCollapsed;
     } catch { }
   }
+
+  $effect(() => {
+    if (mobileView === 'chapters' && sidebarCollapsed) mobileView = 'write';
+  });
 
   $effect(() => {
     try {
@@ -399,6 +416,7 @@
 
         // Save position immediately after switching so reload lands on the new chapter
         saveReadingPosition();
+        if (typeof window !== 'undefined' && window.innerWidth < 900) setView('write');
       }
     } catch { /* ignore */ }
   }
@@ -576,7 +594,7 @@
         <h2 class="book-title editable" onclick={startEditTitle} title="Click to rename">{book.title}</h2>
       {/if}
       <div class="toolbar-actions">
-        <button class="btn" onclick={toggleEditing}>
+        <button class="btn btn-edit" onclick={toggleEditing}>
           {isEditing ? '🔒 Lock' : '✏️ Edit'}
         </button>
         {#if saveStatus === 'dirty'}
@@ -586,10 +604,10 @@
         {:else if saveStatus === 'saved'}
           <span class="status-saved">Saved</span>
         {/if}
-        <button class="btn" class:active={showLore} onclick={() => showLore = !showLore}>
+        <button class="btn btn-wiki" class:active={showLore} onclick={() => showLore = !showLore}>
           📖 Wiki
         </button>
-        <button class="btn" class:active={showChat} onclick={() => showChat = !showChat}>
+        <button class="btn btn-chat" class:active={showChat} onclick={() => showChat = !showChat}>
           💬 Chat
         </button>
       </div>
@@ -613,7 +631,7 @@
       />
     {/if}
 
-    <div class="main-area">
+    <div class="main-area" class:chapters-open={mobileView === 'chapters'}>
       {#if book.status === 'ready' || book.status === 'lore-ready' || book.status === 'splitting' || book.status === 'generating-lore'}
         <ChapterSidebar bind:this={chapterSidebar} {slug} bind:activeChapterId bind:collapsed={sidebarCollapsed} onChapterSelect={handleChapterSelect} />
 
@@ -760,7 +778,7 @@
       {#if showLore}
         <div class="resize-handle" role="separator" aria-orientation="vertical" tabindex="0" onmousedown={startResize('lore')} onkeydown={resizeKeydown('lore')}></div>
         <div class="side-panel" style="width: {loreWidth}px; min-width: {loreWidth}px;">
-          <button class="panel-close" onclick={() => (showLore = false)} aria-label="Close wiki">✕</button>
+          <button class="panel-close" onclick={() => setView('write')} aria-label="Close wiki">✕</button>
           <LorePanel bind:this={lorePanel} {slug} />
         </div>
       {/if}
@@ -768,14 +786,25 @@
       {#if showChat}
         <div class="resize-handle" role="separator" aria-orientation="vertical" tabindex="0" onmousedown={startResize('chat')} onkeydown={resizeKeydown('chat')}></div>
         <div class="side-panel" style="width: {chatWidth}px; min-width: {chatWidth}px;">
-          <ChatPanel {slug} {activeChapterId} onEditDone={handleChatEditDone} onResponseDone={handleResponseDone} onClose={() => showChat = false} />
+          <ChatPanel {slug} {activeChapterId} onEditDone={handleChatEditDone} onResponseDone={handleResponseDone} onClose={() => setView('write')} />
         </div>
       {/if}
     </div>
 
-    {#if !showChat}
-      <button class="chat-fab" onclick={() => showChat = true} aria-label="Open chat" title="Open chat">💬</button>
-    {/if}
+    <nav class="mobile-tabs" aria-label="Book sections">
+      <button class:active={mobileView === 'chapters'} onclick={() => setView('chapters')}>
+        <span class="tab-icon">☰</span><span class="tab-label">Chapters</span>
+      </button>
+      <button class:active={mobileView === 'write'} onclick={() => setView('write')}>
+        <span class="tab-icon">✍️</span><span class="tab-label">Write</span>
+      </button>
+      <button class:active={mobileView === 'wiki'} onclick={() => setView('wiki')}>
+        <span class="tab-icon">📖</span><span class="tab-label">Wiki</span>
+      </button>
+      <button class:active={mobileView === 'chat'} onclick={() => setView('chat')}>
+        <span class="tab-icon">💬</span><span class="tab-label">Chat</span>
+      </button>
+    </nav>
   </div>
 {/if}
 
@@ -1098,6 +1127,10 @@
     background: rgba(249, 117, 131, 0.25);
   }
 
+  .mobile-tabs {
+    display: none;
+  }
+
   .task-banner {
     display: flex;
     align-items: center;
@@ -1111,7 +1144,13 @@
 
   @media (max-width: 900px) {
     .book-view {
-      height: 100dvh;
+      position: fixed;
+      left: 0;
+      right: 0;
+      top: 0;
+      top: var(--vvt, 0px);
+      height: 100vh;
+      height: var(--vvh, 100dvh);
     }
 
     .toolbar {
@@ -1134,6 +1173,15 @@
       margin-left: auto;
     }
 
+    .btn-wiki,
+    .btn-chat {
+      display: none;
+    }
+
+    :global(.collapsed-toggle) {
+      display: none !important;
+    }
+
     .main-area {
       position: relative;
     }
@@ -1149,19 +1197,92 @@
       box-shadow: 8px 0 24px rgba(0, 0, 0, 0.45);
     }
 
+    .main-area.chapters-open > :global(.sidebar) {
+      inset: 0;
+      width: 100%;
+      min-width: 0;
+      box-shadow: none;
+    }
+
+    :global(.main-area.chapters-open .sidebar-header) {
+      padding: 14px 16px;
+      font-size: 15px;
+    }
+
+    :global(.main-area.chapters-open .chapter-filter) {
+      padding: 10px 16px;
+    }
+
+    :global(.main-area.chapters-open .chapter-item) {
+      padding: 14px 16px;
+      font-size: 15px;
+    }
+
+    :global(.main-area.chapters-open .chapter-words) {
+      font-size: 12px;
+    }
+
+    :global(.main-area.chapters-open .delete-btn) {
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+    }
+
+    :global(.main-area.chapters-open .add-chapter) {
+      padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    }
+
+    .mobile-tabs {
+      display: flex;
+      flex-shrink: 0;
+      height: calc(58px + env(safe-area-inset-bottom));
+      padding-bottom: env(safe-area-inset-bottom);
+      border-top: 1px solid var(--border);
+      background: var(--bg-secondary);
+      z-index: 60;
+    }
+
+    .mobile-tabs button {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      border: none;
+      background: none;
+      color: var(--text-secondary);
+      font-family: inherit;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .mobile-tabs button.active {
+      color: var(--accent);
+    }
+
+    .tab-icon {
+      font-size: 19px;
+      line-height: 1;
+    }
+
+    .tab-label {
+      font-size: 10px;
+      letter-spacing: 0.02em;
+    }
+
     .side-panel {
-      position: fixed;
-      left: 0;
-      top: 0;
-      top: var(--vvt, 0px);
+      position: absolute;
+      inset: 0;
       width: 100% !important;
       min-width: 0 !important;
-      height: 100vh;
-      height: var(--vvh, 100dvh);
       display: flex;
       flex-direction: column;
       overflow: hidden;
-      z-index: 100;
+      z-index: 30;
       background: var(--bg-primary);
     }
 
@@ -1202,28 +1323,4 @@
     }
   }
 
-  @media (max-width: 900px) {
-    .chat-fab {
-      display: flex;
-      position: fixed;
-      right: 16px;
-      bottom: calc(16px + env(safe-area-inset-bottom));
-      z-index: 40;
-      width: 56px;
-      height: 56px;
-      align-items: center;
-      justify-content: center;
-      border: none;
-      border-radius: 50%;
-      background: var(--accent);
-      color: #fff;
-      font-size: 22px;
-      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
-      cursor: pointer;
-    }
-
-    .chat-fab:active {
-      transform: scale(0.96);
-    }
-  }
 </style>

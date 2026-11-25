@@ -5,6 +5,7 @@
   import { visualViewport } from '$lib/viewport';
 
   let chatWidth = $state(400);
+  let mobileTab = $state<'browse' | 'assistant'>('browse');
   let activeResize: { x: number; startWidth: number } | null = null;
 
   function startResize(e: MouseEvent) {
@@ -40,7 +41,7 @@
     <h1>🧠 Shared Knowledge Base</h1>
   </div>
 
-  <div class="knowledge-body">
+  <div class="knowledge-body" class:show-chat={mobileTab === 'assistant'}>
     <div class="kb-viewer-pane">
       <KnowledgePanel />
     </div>
@@ -60,6 +61,15 @@
       <ChatPanel mode="knowledge" slug="__shared__" />
     </div>
   </div>
+
+  <nav class="mobile-kb-tabs" aria-label="Knowledge sections">
+    <button class:active={mobileTab === 'browse'} onclick={() => (mobileTab = 'browse')}>
+      <span class="tab-icon">📚</span><span>Browse</span>
+    </button>
+    <button class:active={mobileTab === 'assistant'} onclick={() => (mobileTab = 'assistant')}>
+      <span class="tab-icon">💬</span><span>Assistant</span>
+    </button>
+  </nav>
 </div>
 
 <style>
@@ -68,6 +78,10 @@
     flex-direction: column;
     height: 100vh;
     width: 100vw;
+  }
+
+  .mobile-kb-tabs {
+    display: none;
   }
 
   .knowledge-header {
@@ -146,20 +160,74 @@
       top: var(--vvt, 0px);
     }
 
+    .knowledge-header {
+      padding: 8px 12px;
+      gap: 10px;
+    }
+
+    .knowledge-header h1 {
+      font-size: 15px;
+    }
+
     .knowledge-body {
       flex-direction: column;
     }
 
     .kb-viewer-pane {
       border-right: none;
-      border-bottom: 1px solid var(--border);
+      border-bottom: none;
       min-height: 0;
     }
 
     .kb-chat-pane {
+      display: none;
+    }
+
+    .knowledge-body.show-chat .kb-viewer-pane {
+      display: none;
+    }
+
+    .knowledge-body.show-chat .kb-chat-pane {
+      display: flex;
+      flex: 1;
+      min-height: 0;
       width: 100% !important;
       min-width: 0 !important;
-      max-height: 48vh;
+      max-height: none;
+    }
+
+    .mobile-kb-tabs {
+      display: flex;
+      flex-shrink: 0;
+      height: calc(58px + env(safe-area-inset-bottom));
+      padding-bottom: env(safe-area-inset-bottom);
+      border-top: 1px solid var(--border);
+      background: var(--bg-secondary);
+    }
+
+    .mobile-kb-tabs button {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      border: none;
+      background: none;
+      color: var(--text-secondary);
+      font-family: inherit;
+      font-size: 10px;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .mobile-kb-tabs button.active {
+      color: var(--accent);
+    }
+
+    .mobile-kb-tabs .tab-icon {
+      font-size: 19px;
+      line-height: 1;
     }
 
     .resize-handle {

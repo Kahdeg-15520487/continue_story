@@ -214,4 +214,51 @@
     color: #f97583;
     background: rgba(249, 117, 131, 0.1);
   }
+
+  @media (max-width: 760px) {
+    .book-list {
+      padding: 0 0 96px;
+    }
+
+    .sort-bar {
+      padding: 8px 16px;
+      justify-content: flex-start;
+    }
+
+    .sort-btn {
+      min-height: 36px;
+      padding: 6px 12px;
+    }
+
+    .book-item {
+      padding: 14px 16px;
+      min-height: 56px;
+      gap: 12px;
+      border-radius: 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .book-item:hover {
+      background: none;
+    }
+
+    .status-icon {
+      font-size: 19px;
+    }
+
+    .book-title {
+      font-size: 16px;
+    }
+
+    .book-author {
+      font-size: 13px;
+    }
+
+    .btn-delete {
+      opacity: 1;
+      width: 44px;
+      height: 44px;
+      font-size: 16px;
+    }
+  }
 </style>

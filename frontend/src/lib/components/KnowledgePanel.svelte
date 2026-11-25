@@ -661,4 +661,46 @@
     resize: none;
     outline: none;
   }
+
+  @media (max-width: 860px) {
+    .knowledge-panel {
+      flex-direction: column;
+    }
+
+    .kb-sidebar {
+      width: 100%;
+      min-width: 0;
+      max-height: 45%;
+      border-right: none;
+      border-bottom: 1px solid var(--border, #30363d);
+    }
+
+    .kb-sidebar-header {
+      padding: 10px 14px;
+    }
+
+    .kb-search {
+      padding: 8px 12px;
+    }
+
+    .kb-search input {
+      font-size: 16px;
+    }
+
+    .kb-category-header {
+      padding: 10px 14px;
+      font-size: 13px;
+    }
+
+    .kb-entry {
+      min-height: 44px;
+      padding: 12px 14px;
+      font-size: 14px;
+    }
+
+    .kb-content {
+      flex: 1;
+      min-height: 0;
+    }
+  }
 </style>

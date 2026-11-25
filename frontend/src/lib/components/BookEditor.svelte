@@ -208,4 +208,20 @@
     user-select: text;
     cursor: text;
   }
+
+  @media (max-width: 900px) {
+    .milkdown-wrapper {
+      padding: 18px 16px 32px;
+    }
+
+    .milkdown-wrapper :global(.milkdown) {
+      max-width: none;
+      font-size: 17px;
+      line-height: 1.75;
+    }
+
+    .milkdown-wrapper :global(.milkdown h1) {
+      font-size: 26px;
+    }
+  }
 </style>
