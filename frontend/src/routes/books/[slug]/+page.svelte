@@ -766,10 +766,14 @@
       {#if showChat}
         <div class="resize-handle" role="separator" aria-orientation="vertical" tabindex="0" onmousedown={startResize('chat')} onkeydown={resizeKeydown('chat')}></div>
         <div class="side-panel" style="width: {chatWidth}px; min-width: {chatWidth}px;">
-          <ChatPanel {slug} {activeChapterId} onEditDone={handleChatEditDone} onResponseDone={handleResponseDone} />
+          <ChatPanel {slug} {activeChapterId} onEditDone={handleChatEditDone} onResponseDone={handleResponseDone} onClose={() => showChat = false} />
         </div>
       {/if}
     </div>
+
+    {#if !showChat}
+      <button class="chat-fab" onclick={() => showChat = true} aria-label="Open chat" title="Open chat">💬</button>
+    {/if}
   </div>
 {/if}
 
@@ -1117,6 +1121,7 @@
     .book-title {
       font-size: 15px;
       max-width: 100%;
+      min-width: 0;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -1157,6 +1162,31 @@
 
     .editor-pane {
       width: 100%;
+    }
+  }
+
+  @media (max-width: 900px) {
+    .chat-fab {
+      display: flex;
+      position: fixed;
+      right: 16px;
+      bottom: calc(16px + env(safe-area-inset-bottom));
+      z-index: 40;
+      width: 56px;
+      height: 56px;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      font-size: 22px;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+      cursor: pointer;
+    }
+
+    .chat-fab:active {
+      transform: scale(0.96);
     }
   }
 </style>

@@ -10,12 +10,14 @@
     onEditDone,
     onResponseDone,
     mode = 'book',
+    onClose,
   }: {
     slug: string;
     activeChapterId?: string | null;
     onEditDone?: (chapterId: string) => void;
     onResponseDone?: () => void;
     mode?: 'book' | 'knowledge';
+    onClose?: () => void;
   } = $props();
 
   let messages: Array<{ role: 'user' | 'assistant'; text: string; thinking?: string; createdAt?: number }> = $state([]);
@@ -386,6 +388,9 @@
       {#if messages.length > 0}
         <button class="btn-clear-history" onclick={clearHistory} title="Clear chat history">Clear</button>
       {/if}
+      {#if onClose}
+        <button class="btn-close" title="Close chat" aria-label="Close chat" onclick={onClose}>✕</button>
+      {/if}
     </div>
   </div>
 
@@ -557,4 +562,13 @@
   .btn-retry:hover { color: var(--accent); border-color: var(--accent); }
   .input-actions { display: flex; gap: 6px; }
   .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .btn-close { width: 26px; height: 26px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-tertiary); color: var(--text-secondary); cursor: pointer; font-size: 13px; line-height: 1; display: flex; align-items: center; justify-content: center; }
+  .btn-close:hover { color: var(--text-primary); border-color: var(--accent); }
+
+  @media (max-width: 900px) {
+    .input-form {
+      padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    }
+  }
 </style>

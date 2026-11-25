@@ -139,6 +139,10 @@
   }
 
   @media (max-width: 860px) {
+    .knowledge-page {
+      height: 100dvh;
+    }
+
     .knowledge-body {
       flex-direction: column;
     }
