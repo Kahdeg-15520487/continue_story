@@ -71,7 +71,7 @@
     const el = textareaEl;
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = Math.min(el.scrollHeight, 160) + 'px';
+    el.style.height = Math.min(el.scrollHeight, 320) + 'px';
   }
 
   $effect(() => {
@@ -489,7 +489,7 @@
       disabled={streaming}
       onkeydown={handleKeydown}
       oninput={autoResize}
-      rows="2"
+      rows="4"
     ></textarea>
     <div class="input-actions">
       <button type="submit" class="btn" disabled={streaming || !input.trim()}>
@@ -553,14 +553,14 @@
   .message-text.markdown :global(strong) { font-weight: 600; }
   .message-text.markdown :global(a) { color: var(--accent); text-decoration: underline; }
   .message-text.markdown :global(hr) { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
-  .input-form { flex-shrink: 0; display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border); }
-  .input-form textarea { flex: 1; padding: 8px 12px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); font-size: 13px; resize: none; font-family: inherit; }
-  .btn { padding: 6px 14px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-tertiary); color: var(--text-primary); cursor: pointer; font-size: 13px; }
+  .input-form { flex-shrink: 0; display: flex; align-items: flex-end; gap: 8px; padding: 14px 16px; border-top: 1px solid var(--border); }
+  .input-form textarea { flex: 1; min-height: 112px; padding: 12px 14px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 8px; color: var(--text-primary); font-size: 15px; line-height: 1.5; resize: none; font-family: inherit; }
+  .btn { min-height: 44px; padding: 10px 18px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-tertiary); color: var(--text-primary); cursor: pointer; font-size: 14px; }
   .btn-stop { border-color: #da3633; color: #f97583; }
   .btn-stop:hover { background: #3d1f1f; }
   .btn-retry { color: var(--text-secondary); }
   .btn-retry:hover { color: var(--accent); border-color: var(--accent); }
-  .input-actions { display: flex; gap: 6px; }
+  .input-actions { display: flex; flex-shrink: 0; gap: 8px; }
   .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
   .btn-close { width: 26px; height: 26px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-tertiary); color: var(--text-secondary); cursor: pointer; font-size: 13px; line-height: 1; display: flex; align-items: center; justify-content: center; }
@@ -569,6 +569,27 @@
   @media (max-width: 900px) {
     .input-form {
       padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    }
+  }
+
+  @media (max-width: 600px) {
+    .input-form {
+      flex-direction: column;
+      align-items: stretch;
+      padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
+    }
+
+    .input-form textarea {
+      min-height: 128px;
+      font-size: 16px;
+    }
+
+    .input-actions {
+      justify-content: flex-end;
+    }
+
+    .input-actions .btn {
+      flex: 1;
     }
   }
 </style>
