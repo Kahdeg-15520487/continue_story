@@ -1,7 +1,8 @@
 # Durable Harness + Provider Config + UX Revamp — Design & Migration Plan
 
 - **Date:** 2026-09-29
-- **Status:** Proposed (plan only — no code yet)
+- **Status:** Revision 2 (2026-09-29) — built-in-first pass
+- **Revision 2 changes:** prompt as registry `section`s (not stored `instructions`), `reset`/`fork` (not custom replace), built-in `ConversationTranscript` (not a hand-written ops applier), the documented `models.json` schema, durable tasks for lore/chapter-split, and `beforeTool`/`afterTool` invariants.
 - **Scope:** `agent/` (rewrite), `backend/` (contract + settings), `frontend/` (transport + full UX revamp), `k8s/`
 - **Decisions locked by owner:**
   1. Deliver a **plan first**; implementation starts only after sign-off.
@@ -88,9 +89,41 @@ Svelte 5 frontend ──/api/*──► ASP.NET Core API ──/internal/agent/*
                                                                         /library (RWO PVC)
 ```
 
-- **Agent owns** durable conversations, model registry, provider secrets (encrypted), tools, system-prompt extensions.
-- **Backend owns** the public API, validation/auth, and the book library metadata; it proxies the durable stream and settings.
-- **Frontend owns** a client-side transcript store that applies snapshot+ops and renders `pi.live` (partials, tool output).
+### 3.1 Built-in-first principle
+
+Our code should be **transport, content, and adapters** — nothing pi-durable
+already owns.
+
+- **No custom state model.** Conversations, entries, documents, tasks, inbox,
+  usage and lifecycle come from the harness.
+- **No custom prompt plumbing.** Prompt text lives in extension **sections**;
+  `instructions` is reserved for per-book author directives.
+- **No custom lifecycle.** “Clear chat” is `reset()`, “branch” is `fork()`; there
+  is no delete/replace.
+- **No custom transcript merge.** The client uses the built-in
+  `ConversationTranscript` (`merge`, `resume`, `loadEarlier`, `fillGap`).
+- **No custom model runtime.** `createModels`, `CredentialStore`, `ModelsStore`,
+  `createProvider`, and the documented `models.json` schema.
+- **No custom scheduling.** Long agent work is `defineTask`, not ad-hoc HTTP +
+  external retries.
+
+| Concern | Built-in we use | Custom that remains |
+|---|---|---|
+| Durability / resume | `Harness`, SQLite storage | — |
+| Transcript merge / reconnect | `ConversationTranscript` | thin SSE transport |
+| Prompt | `section` + `defineExtension` | prompt content only |
+| Tool invariants | `beforeTool` / `afterTool` hooks | the rules themselves |
+| Lifecycle | `reset` / `fork` / `abort` / `compact` | — |
+| Long jobs | `defineTask` / `waitForTask` | task definitions + task endpoints |
+| Models / auth | `createModels`, `CredentialStore`, `ModelsStore`, `identity` | encrypted secret file + UI |
+| Tools | `CodingTools`, `defineTool` | SearXNG web tools only |
+| Book context | conversation document + section | the context content |
+| Book→conversation index | `defineDoc` | the tiny doc definition |
+| Usage / cost | `UsageDoc` | — |
+
+- **Agent owns** the harness, registry, provider config and secrets.
+- **Backend owns** the public API, validation/auth, and book metadata; it proxies the stream and settings.
+- **Frontend owns** rendering; transcript state comes from `ConversationTranscript`.
 
 ---
 
@@ -123,27 +156,33 @@ Svelte 5 frontend ──/api/*──► ASP.NET Core API ──/internal/agent/*
 ### A3. Harness, registry, extensions, environment
 
 ```ts
-const context = BACKGROUND_CONTEXT;
-const models = createModels();                 // providers installed from provider config (Workstream B)
+const models = createModels({
+  credentials: encryptedCredentialStore,   // CredentialStore over an AES-GCM file
+  modelsStore: new InMemoryModelsStore(),  // catalog overlays
+  identity: { attribution: { name: "continue-story" } },
+});
+
 const registry = createRegistry();
-registry.install(createCodingTools({ images: await createNodePhotonImages() })); // read/write/edit/bash
-registry.install(StoryExtension);              // system-prompt sections (A5)
-registry.install(SharedKnowledgeExtension);    // KB prompt + KB write rules
-registry.install(defineExtension({ name: "web", tools: [webSearchTool, webFetchTool] }));
+registry.install(CodingTools);
+registry.install(WebTools);                 // defineTool + pi-schema
+registry.install(StoryExtension);           // sections (A5)
+registry.install(KnowledgeExtension);       // sections
+registry.install(InvariantsExtension);      // beforeTool/afterTool hooks
 
 const harness = await Harness.open(await openNodeSqliteStorage(DB_PATH), {
   models,
   registry,
   env: ({ cwd }) => new NodeExecutionEnv({ cwd: cwd ?? "/library" }),
-  settings: { /* stream timeouts, retry, compaction, progress */ },
-}, context);
+  settings: liveSettings(),                 // getters, re-read at every use
+}, BACKGROUND_CONTEXT);
 harness.resume();
 ```
 
 - **Tools:** built-in `read`/`write`/`edit`/`bash` replace `pi-coding-agent.createCodingTools`. `web_search`/`web_fetch` are rewritten with `defineTool` + `@earendil-works/pi-schema` (same SearXNG behavior).
 - **Environment:** one `NodeExecutionEnv` per call, `cwd = /library/{slug}` for stories, `/library` for `__shared__`. This preserves the current chapter/wiki file workflow (`chapters/ch-*.md`, `*.scratch.md`, `wiki/*`).
-- **`*.scratch.md` diff flow:** unchanged at the file level; the backend still scans for scratch files. Under pi-durable the tool result is a durable `pi.tool-result` entry, so the backend can also detect writes from the stream instead of polling the directory.
-- **Skills:** the current `/skills` ConfigMap is only referenced by the agent image/container; `createCodingTools` does not load it. Decide in the spike whether to port lore-extraction to an extension section or keep it as a file read.
+- **`*.scratch.md` diff flow:** the write/edit tool's committed `pi.tool-result` entry carries the path in `details`; derive `edit_done` from that entry (no filesystem scan). Optionally an `afterTool` hook appends an `app.edit` marker entry in the same commit.
+- **Invariants:** a `beforeTool` hook blocks writes outside `cwd`, edits to `book.md`/`book.org.md`, and path escapes; an `afterTool` hook surfaces scratch writes. Prompt text stops being the only enforcement.
+- **Skills:** port `/skills/lore-extraction` to a `KnowledgeExtension` section so it renders through the registry; the `/skills` ConfigMap can be retired.
 
 ### A4. Per-conversation agent
 
@@ -151,13 +190,14 @@ harness.resume();
 await conversation.configure({
   model: { provider: cfg.provider, modelId: cfg.modelId },
   thinkingLevel: cfg.thinkingLevel,
-  tools: [...],                 // coding + web + app tools
-  instructions: storyInstructions,
   cwd: `/library/${slug}`,
   maxTurns: 50,
+  // `instructions` is reserved for per-book author directives, not craft rules:
+  // instructions: bookDirectives,
 }, context);
 ```
 
+- Craft/role/tool rules come from the registry's sections; `instructions` is empty by default and only carries per-book author intent.
 - Model resolution is **global** (owner scope): the active provider's default model. No per-book override now; the schema leaves room for it later.
 - `maxTurns` replaces the implicit infinite tool loop; pick a sane bound (e.g. 50).
 - `thinkingLevel` becomes a settings value (today hard-coded `"off"`).
@@ -181,64 +221,102 @@ The current monolithic `SYSTEM_PROMPT` (~200 lines) becomes ordered **extension 
 - Sections must be **static** (no timestamps/randomness) to preserve prompt caching.
 - Acceptance: a golden-text test asserts the rendered prompt for a story conversation is byte-identical to the current prompt (modulo section wrappers). This guards against silent craft-rule loss.
 
-### A6. Agent HTTP API (new contract)
+### A6. Agent HTTP API (built-in vocabulary)
 
-The agent becomes conversation-oriented and **stream-first**:
+The transport stays custom (pi-durable is a library, not a server), but it exposes
+the harness's own verbs instead of re-inventing them.
 
-| Method | Path | Purpose |
+| Method | Path | Built-in it maps to |
 |---|---|---|
-| GET | `/health` | liveness + harness/DB status |
-| GET | `/api/conversations` | list (slug, id, title, updated) |
-| POST | `/api/conversations` | ensure conversation for `{slug, mode}` |
-| GET | `/api/conversations/:id` | metadata + agent config |
-| DELETE | `/api/conversations/:id` | reset/delete |
-| GET | `/api/conversations/:id/stream?from=<cursor>` | **SSE: snapshot + ops** |
-| POST | `/api/conversations/:id/input` | `{content, whenBusy, whenIdle, requestId, entry?}` |
-| POST | `/api/conversations/:id/abort` | abort current run |
-| POST | `/api/conversations/:id/configure` | model/thinking/tools/instructions/cwd |
-| POST | `/api/conversations/:id/compact` | manual compaction |
-| GET | `/api/conversations/:id/usage` | tokens/cost |
-| GET | `/api/models` | catalog for settings UI |
-| GET/PUT | `/api/settings/llm` | provider config (masked) |
-| POST | `/api/settings/llm/test` | test connection |
+| GET | `/health` | `harness.inspect()` + DB path |
+| GET | `/api/conversations` | `tx.scanConversations` (+ `app.sessions` index) |
+| POST | `/api/conversations` | `createConversation` + `app.sessions` doc |
+| GET | `/api/conversations/:id` | `conversation.agent()` + `UsageDoc` |
+| POST | `/api/conversations/:id/input` | `conversation.submit()` |
+| POST | `/api/conversations/:id/abort` | `conversation.abort()` |
+| POST | `/api/conversations/:id/reset` | `conversation.reset(handoff?)` |
+| POST | `/api/conversations/:id/fork` | `conversation.fork(at, options)` |
+| POST | `/api/conversations/:id/compact` | `conversation.compact()` |
+| POST | `/api/conversations/:id/configure` | `conversation.configure()` |
+| GET | `/api/conversations/:id/stream` | `conversation.watch()` |
+| GET | `/api/conversations/:id/entries` | `conversation.entries()` (`loadEarlier`/`fillGap`) |
+| GET | `/api/conversations/:id/usage` | `UsageDoc` |
+| GET | `/api/tasks`, `/api/tasks/:id` | `harness.inspect()` / `getTask()` / `waitForTask()` |
+| POST | `/api/tasks` | `tx.createTask()` (`ChapterSplitTask`, `LoreTask`) |
+| GET | `/api/models` | `models.getProviders()` + `getModels()` |
+| GET/PUT | `/api/settings/llm` | config file + `CredentialStore` |
+| POST | `/api/settings/llm/test` | provider resolution |
 
-**Wire format** (SSE `data:` frames):
+**Lifecycle:** “clear chat” is `reset()` (history kept, new context); “branch”
+is `fork()`; there is **no custom delete/replace**. Deleting a book unmaps the
+conversation; the transcript remains in durable storage.
+
+**Wire format:** forward Chord's `WatchCall` shape rather than a bespoke event
+model:
 
 ```jsonc
-// 1. first frame after attach
-{ "v": 1, "kind": "snapshot",
-  "value": {
-    "id": "…", "entries": [ /* newest 50 */ ], "before": "…",
-    "docs": { "pi.live": {...}, "pi.inbox": {...}, "pi.usage": {...},
-              "pi.agent": {...}, "pi.provider": {...} }
-  } }
-
-// 2. subsequent frames (folded Chord ops)
-{ "v": 1, "kind": "ops", "ops": [ /* ["a", index, entry], ["s", path, value], ["r", value] */ ] }
-
-// 3. terminal
+{ "v": 1, "kind": "value", "value": { /* ConversationView */ }, "ops": [ /* Chord Op[] */ ] }
 { "v": 1, "kind": "end", "reason": "stopped|ended|failed" }
 ```
 
-- `pi.live` carries the streamed partial, tool calls with output/details, and `runFailure` — this replaces `message_update`/`tool_execution_*`.
-- `pi.usage` replaces the custom token counter.
-- **Reconnect:** the frontend keeps a cursor from the last applied op; on drop it re-attaches with `from`. Server-side, use `watch(context, { from })` / `ConversationTranscript.resume`.
-- The backend proxies this stream **verbatim** (`text/event-stream`), adding no transformation; it only injects book context as an `input.entry` (the current `contextHint` logic moves into the backend as a structured `entry` or stays in the input `content`).
-- `edit_done` disappears: the backend derives scratch-file edits from `pi.tool-result`/`pi.live` entries (or keeps the directory scan as a safety net).
+The client owns the merge with the **built-in** `ConversationTranscript`:
 
-**Mapping old → new (backend call sites):**
+```ts
+const transcript = new ConversationTranscript(
+  (query, limit, ctx) => proxy.entries(query, limit, ctx),
+);
+transcript.merge(view);              // items, gaps, “load earlier” markers
+conv.watch(ctx, transcript.resume);  // reconnect where it left off
+```
+
+`ConversationTranscript` is browser-safe (Node imports live only in
+`images/node` and `env/node-watch`, outside the root graph). Verify bundling in
+Phase 2; server-side merging is the fallback.
+
+**Edits:** derive `edit_done` from the committed `pi.tool-result` entry for the
+`write`/`edit` tool (its `details` carries the path), not from a filesystem
+scan. Optionally an `afterTool` hook appends an `app.edit` marker entry in the
+same commit.
+
+**Book context:** a small `app.context` conversation document rendered by a
+section, instead of prepending dynamic text to every user message.
+
+**Mapping old → new:**
 
 | Old | New |
 |---|---|
 | `EnsureSessionAsync` | `POST /api/conversations` |
-| `CreateNewSessionAsync` | `DELETE` + `POST /api/conversations` |
-| `SendPromptAsync` | `POST /input` + wait for settlement (or read the transcript) |
+| `CreateNewSessionAsync` | `POST /:id/reset` |
 | `StreamPromptAsync` | `GET /stream` (attach) + `POST /input` |
 | `AbortSessionAsync` | `POST /abort` |
 | `GetSessionInfoAsync` | `GET /api/conversations/:id` + `/usage` |
 | `CompactSessionAsync` | `POST /compact` |
 | `ListSessionsAsync` | `GET /api/conversations` |
-| `GetLastUserMessageAsync` | read transcript tail (or `GET /:id` summary) |
+| `GetLastUserMessageAsync` | transcript tail |
+| `SendPromptAsync` (lore/split) | `POST /api/tasks` + `GET /api/tasks/:id` |
+
+### A6.1 Durable tasks — replace agent-side retries
+
+`LoreJobService` and `ChapterSplitService` call the non-streaming `/prompt`
+endpoint and rely on Hangfire for retries. The agent-side work is exactly what
+built-in tasks are for:
+
+```ts
+const ChapterSplitTask = defineTask({ name: "app.chapter-split", version: 1, /* phases */ });
+const LoreTask = defineTask({ name: "app.lore", version: 1, /* phases */ });
+
+// start (HTTP): POST /api/tasks { kind: "lore", slug }
+const id = await harness.commit(
+  (tx) => tx.createTask(LoreTask, { slug }, { ownership: { kind: "ownerless" } }),
+  ctx,
+);
+// status (HTTP): GET /api/tasks/:id → harness.getTask / waitForTask
+```
+
+- Phases checkpoint after every model/tool call; a crash resumes.
+- `settings.restartLimit` bounds repeated crashes.
+- Hangfire stays for file conversion; it waits on the durable task instead of
+  holding a long HTTP call.
 
 ### A7. Data migration
 
@@ -256,64 +334,100 @@ The agent becomes conversation-oriented and **stream-first**:
 | SQLite write contention / local-path disk | single agent replica; WAL; backup job; monitor `durable.sqlite-wal` |
 | Resume semantics differ from "abort" | map `abort` to pi-durable abort; verify queued-input behavior |
 | Prompt regression | golden-prompt test in A5 |
-| Streaming UX regressions | ops applier + reconnect tests; keep a `?legacy=1` debug stream during Phase 1 **only in dev** |
+| Streaming UX regressions | `ConversationTranscript` adapter tests + reconnect tests; keep a `?legacy=1` debug stream during Phase 2 **only in dev** |
+| `ConversationTranscript` does not bundle in Vite | verify in the Phase 2 spike; fallback = server-side merge (send `TranscriptView.items` + `pi.live`) |
+| Hooks block legitimate writes | ship hooks warn-only for one phase, then enforce; log blocked paths |
 
 ---
 
 ## 5. Workstream B — LLM provider configuration
 
-### B1. Ownership and security model
+### B1. Use the built-in model plumbing
 
-**Recommendation: the agent owns the config** (it needs plaintext keys at call time), the backend proxies the settings API, and the public API never returns a key.
+The custom surface should be **the settings UI and encrypted secret storage** —
+the model runtime is pi-ai's.
 
-- Config file: `/data/llm-config.json` (atomic write: temp + rename) **or** a row in the durable SQLite DB. JSON is simpler to inspect/rotate; the DB is transactional. Pick JSON + atomic rename.
-- Encryption at rest: **AES-256-GCM**, key from `CONFIG_ENCRYPTION_KEY` (32-byte base64) in a k8s secret. Ciphertext stores `{v, iv, tag, ct}`.
-- Responses always mask (`sk-…4f2a`); never log keys; redact `Authorization` in errors.
-- Env fallback: if no provider is configured, fall back to `DEEPSEEK_API_KEY`/`PI_MODEL` so an upgrade never bricks the deployment. On first run, optionally seed a provider from the env key.
+- `createModels({ credentials, modelsStore, identity })` — built-in registries.
+  - `credentials`: a `CredentialStore` over an AES-256-GCM encrypted JSON file
+    (`CONFIG_ENCRYPTION_KEY` from a k8s secret).
+  - `modelsStore`: `InMemoryModelsStore` initially; a small file adapter for
+    catalog overlays if persistence is wanted.
+  - `identity`: `{ attribution: { name: "continue-story", url: … } }`.
+- Config uses the **documented `models.json` schema** (`$schema`,
+  `providers.{id}.{baseUrl, api, apiKey, headers, models, modelOverrides}`), so
+  it is compatible with the pi CLI and the published schema.
+- `apiKey` accepts a literal, `$ENV`/`${ENV}`, or `!command` (built-in
+  resolution), so secret-managed deployments need not store keys in the app.
+- Providers without a built-in factory use `createProvider` (built-in) with
+  `auth`, `models`, `api`.
+- `pi-ai` does **not** parse `models.json` itself (that is pi-coding-agent's
+  ModelManager). We implement a ~50-line loader for the documented schema and do
+  **not** reintroduce pi-coding-agent.
+- Responses always mask keys; never log them; redact `Authorization`.
+- Env fallback: if no provider is configured, fall back to `DEEPSEEK_API_KEY`/
+  `PI_MODEL` so an upgrade never bricks the deployment.
 
-### B2. Data model
+### B2. Data model (models.json-compatible)
 
 ```jsonc
 {
-  "version": 1,
-  "defaultProviderId": "deepseek",
-  "defaultModelId": "deepseek-flash",
+  "$schema": "https://pi.dev/schemas/models.schema.json",
+  "defaultProvider": "deepseek",
+  "defaultModel": "deepseek-flash",
   "thinkingLevel": "off",
-  "providers": [
-    {
-      "id": "deepseek",            // stable slug
-      "name": "DeepSeek",          // display
-      "kind": "deepseek",          // pi-ai provider factory key
-      "baseUrl": null,             // null = factory default
-      "apiKey": { "v": 1, "iv": "…", "tag": "…", "ct": "…" },
-      "keyLast4": "8f2a",
-      "enabled": true,
-      "createdAt": "…", "updatedAt": "…"
+  "providers": {
+    "deepseek": {
+      "api": "openai-completions",
+      "apiKey": "!continue-story-secret deepseek",   // or "$DEEPSEEK_API_KEY"
+      "models": [{ "id": "deepseek-flash" }]
+    },
+    "local": {
+      "baseUrl": "http://ollama:11434/v1",
+      "api": "openai-completions",
+      "apiKey": "ollama",
+      "models": [{ "id": "qwen2.5-coder:7b" }]
     }
-  ]
+  },
+  "modelOverrides": {}
 }
 ```
 
-- `kind` maps to a curated factory set: `openai`, `anthropic`, `google`, `deepseek`, `openrouter`, `mistral`, `groq`, `xai`, `azure`, `custom` (OpenAI-compatible base URL + key).
-- Model list per provider comes from `provider.getModels()` / the generated catalog, plus a free-text model id for custom endpoints.
-- Validation: URL shape, non-empty key, unique id, one default.
+- App-only metadata (`keyLast4`, `createdAt`, `enabled`) lives beside the
+  schema-compatible fields; the loader ignores unknown keys.
+- Secrets are either `$ENV`/`!command` refs or ciphertext in the encrypted
+  `CredentialStore`; never inline plaintext in the config file.
+- Validation: URL shape, non-empty key, unique provider id, one default.
 
-### B3. Provider wiring
+### B3. Provider wiring (built-in)
 
 ```ts
-// build the registry from config
-for (const p of enabledProviders) {
-  const factory = FACTORIES[p.kind];         // e.g. deepseekProvider, openaiProvider, …
-  const provider = p.baseUrl || p.kind === "custom"
-    ? createProvider({ id: p.id, baseUrl: p.baseUrl, auth: { apiKey: decrypt(p.apiKey) }, models: [...] })
-    : factory({ apiKey: decrypt(p.apiKey) }); // verify factory option name in Phase 0
-  models.setProvider(provider);
+const config = loadModelsJson(CONFIG_PATH);            // documented schema
+const models = createModels({
+  credentials: encryptedCredentialStore,               // CredentialStore
+  modelsStore: new InMemoryModelsStore(),
+  identity: { attribution: { name: "continue-story" } },
+});
+
+for (const [id, p] of Object.entries(config.providers)) {
+  const factory = BUILTIN_FACTORIES[id];               // deepseekProvider, openaiProvider, …
+  models.setProvider(
+    factory && !p.baseUrl
+      ? factory()                                      // key comes from CredentialStore
+      : createProvider({                               // built-in custom endpoint
+          id,
+          name: p.name ?? id,
+          baseUrl: p.baseUrl,
+          auth: { apiKey: resolveAuth(p) },
+          models: p.models ?? [],
+          api: apiFor(p.api),
+        }),
+  );
 }
 ```
 
-> Phase 0 must confirm how pi-ai 1.6.0 provider factories accept an explicit key (`openaiProvider()` is declared with no args in the d.ts; the key may come from `createProvider({ auth })` or `models` credential store). The plan assumes explicit `auth`; if factories only read env, use `createProvider` with `auth` (documented as required) or set per-request credentials.
-
-- Config changes rebuild/replace providers via `models.setProvider` + `registry` reload; conversations pick the new model on their next `configure()`/request.
+- Config changes call `models.setProvider()` again (the registry is live); no
+  restart needed. Conversations keep their stored `pi.agent` model until
+  `configure()` is called — an explicit policy decision (see §11).
 
 ### B4. HTTP API (public, backend)
 
@@ -357,6 +471,7 @@ for (const p of enabledProviders) {
 - **Density with air.** Generous line-height in the editor; compact tool chrome.
 - **Progressive disclosure.** Panels collapse; advanced settings live in Settings.
 - **Keyboard-first.** Every primary action has a shortcut; focus is always visible.
+- **Thin client state.** Transcript merge, gaps, and reconnect come from the built-in `ConversationTranscript`; the client renders `items` and `pi.live`, it does not re-implement the harness.
 
 ### C2. Design tokens (single source: `frontend/src/lib/design/tokens.css`)
 
@@ -441,7 +556,7 @@ Settings (/settings)             → Models & Providers, Appearance, Data
 
 **New:** `AppShell`, `Rail`, `Sheet`, `CommandPalette`, `ProviderCard`, `ProviderDrawer`, `ModelPicker`, `SettingsNav`, `EmptyState`, `ToolCard`, `StreamStatus`, `Skeleton`, `IconButton`, `Field`.
 **Rework:** `BookList`, `BookEditor`, `ChapterSidebar`, `ChatPanel`, `LorePanel`, `KnowledgePanel`, `DiffOverlay`, `InlineEditMenu`, `UploadZone`, `Toasts`.
-**Delete/replace:** `tool-labels.ts` (labels move into tool metadata), ad hoc SSE parser in `api.ts` (replaced by `lib/stream/ops.ts`).
+**Delete/replace:** `tool-labels.ts` (labels move into tool metadata), ad hoc SSE parser in `api.ts`, and any hand-written ops applier — replaced by the built-in `ConversationTranscript` plus `pi.live` rendering.
 
 ### C7. UX debt to fix in the revamp (carry-over from the 2026-08-02 sweep)
 
@@ -466,21 +581,38 @@ Settings (/settings)             → Models & Providers, Appearance, Data
 | Phase | Deliverable | Acceptance |
 |---|---|---|
 | **0. Spike** (1–2 d) | Throwaway harness: pi-durable + SQLite + `watch` ops over SSE; verify `createConversation`, `defineDocument`, provider `auth` key injection, Node 22.19 on Alpine | Demo stream + resume after kill |
-| **1. Agent foundation** | Harness, storage + `agent-data` PVC, tools, extensions, prompt sections, conversation API, ops stream; old session API removed | Contract tests; kill -9 resume; golden prompt |
+| **1. Agent foundation** | Harness, storage + `agent-data` PVC, tools, extensions, conversation API, ops stream; old session API removed | Contract tests; kill -9 resume |
+| **1.5 Built-in alignment** | Prompt → registry `sections`; `beforeTool`/`afterTool` invariants; `reset`/`fork`; edits from committed tool results; `ConversationTranscript` + reconnect; live settings getters; `identity` | Golden prompt; hook tests; reconnect + reset/fork tests |
 | **2. Backend + transport** | New `IAgentService`, `/api/chat` → durable stream, all call sites migrated, reconnection | Integration tests; no `/api/sessions` references |
 | **3. Provider config** | Encrypted config, provider/model catalog, test endpoint, env fallback + seed | Add/test/select provider end-to-end; key never returned |
 | **4. UX revamp** | Tokens, AppShell, responsive, screens, component rework, Settings UI | svelte-check, a11y, visual snapshots |
 | **5. Rollout** | Migration/backfill, backup, docs, remove `PI_MODEL`, cleanup | Fresh deploy + restore drill |
 
-**Sequencing rationale:** 1→2 unblocks the durable transport; 3 is small and independent once the model registry exists; 4 is the largest surface and benefits from the stable `pi.live` shape.
+**Sequencing rationale:** 1→1.5 removes the remaining custom re-implementations before the backend binds to them; 2 unblocks the durable transport; 3 is small and independent once the model registry exists; 4 is the largest surface and benefits from the stable `pi.live` shape.
+
+### Phase 1.5 — align the committed Phase 1 code
+
+The committed Phase 1 (`6f18f47`) still contains the pre-revision choices. Before
+Phase 2:
+
+1. Move `STORY_INSTRUCTIONS`/`KB_INSTRUCTIONS` into `StoryExtension`/
+   `KnowledgeExtension` **sections**; drop `instructions` from
+   `configureConversation` (reserve it for per-book author directives).
+2. Replace `replaceConversation` with `reset()` and add `fork()`.
+3. Add `InvariantsExtension` (`beforeTool`: path scope + `book*.md`;
+   `afterTool`: scratch marker).
+4. Convert `settings` to getters backed by config; set `identity`.
+5. List via `tx.scanConversations`; keep `app.sessions` only as the slug index.
+6. Add the `ConversationTranscript` + reconnect path (the client lands in
+   Phase 2).
 
 ---
 
 ## 8. Testing strategy
 
-- **Agent:** contract tests over `MemoryStorage` and `openNodeSqliteStorage`; resume (SIGKILL mid-run); tool tests (read/write/edit/bash/web); ops-stream golden tests; prompt golden tests; provider-config encrypt/decrypt/mask/test.
+- **Agent:** contract tests over `MemoryStorage` and `openNodeSqliteStorage`; resume (SIGKILL mid-run); tool tests (read/write/edit/bash/web); hook tests (blocked paths, `book.md` immutability, scratch markers); task tests (lore/split resume); ops-stream golden tests; prompt-section golden tests; provider-config encrypt/decrypt/mask/test.
 - **Backend:** `WebApplicationFactory` integration tests for the new chat stream, settings CRUD, and validation; ensure no key leakage in responses/logs.
-- **Frontend:** `svelte-check`; unit tests for the ops applier and transcript merge; Playwright e2e for library → book → chat → accept diff, and settings → add provider → test.
+- **Frontend:** `svelte-check`; tests for the thin `ConversationTranscript` adapter (`merge`/`resume`/gaps) and `pi.live` rendering; Playwright e2e for library → book → chat → accept diff, and settings → add provider → test.
 - **Stack:** docker-compose smoke (`/api/health`, a real prompt, a scratch-file accept).
 - **Regression gates:** `tsc --noEmit`, `dotnet build && dotnet test`, `npm run check && npm run build`.
 
@@ -526,6 +658,15 @@ Settings (/settings)             → Models & Providers, Appearance, Data
 5. **Skills:** keep `/skills` lore-extraction as a section or a tool?
 6. **Auth:** Settings exposes provider keys; confirm Authelia/ingress is the only auth boundary and whether an admin-only gate is needed.
 7. **Backfill:** do we import existing chat history, or treat it as read-only legacy?
+
+**Raised by the built-in-first pass:**
+
+8. **`ConversationTranscript` in SvelteKit/Vite** — confirm the root graph bundles without Node shims; fallback is server-side merge.
+9. **`afterTool` entry writes** — can a hook append an `app.edit` marker, or does the client derive it from `pi.tool-result`?
+10. **`models.json` compatibility** — adopt the documented schema (recommended) or only our stored shape?
+11. **Model-change policy** — when the global default changes, reconfigure existing conversations or leave them pinned to their stored model?
+12. **Hangfire retirement** — move lore/split fully onto durable tasks, or keep Hangfire as the scheduler?
+13. **Book scope** — should `beforeTool` hard-block absolute paths / `cd ..` (breaks some workflows) or warn?
 
 ---
 
