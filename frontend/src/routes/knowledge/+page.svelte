@@ -2,6 +2,7 @@
   import { goto } from '$app/navigation';
   import KnowledgePanel from '$lib/components/KnowledgePanel.svelte';
   import ChatPanel from '$lib/components/ChatPanel.svelte';
+  import { visualViewport } from '$lib/viewport';
 
   let chatWidth = $state(400);
   let activeResize: { x: number; startWidth: number } | null = null;
@@ -33,7 +34,7 @@
   <title>Knowledge Base — Story Engine</title>
 </svelte:head>
 
-<div class="knowledge-page">
+<div class="knowledge-page" use:visualViewport>
   <div class="knowledge-header">
     <button class="back-btn" onclick={() => goto('/')}>← Library</button>
     <h1>🧠 Shared Knowledge Base</h1>
@@ -141,6 +142,8 @@
   @media (max-width: 860px) {
     .knowledge-page {
       height: 100dvh;
+      height: var(--vvh, 100dvh);
+      top: var(--vvt, 0px);
     }
 
     .knowledge-body {

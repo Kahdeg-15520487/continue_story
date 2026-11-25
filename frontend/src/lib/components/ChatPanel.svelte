@@ -505,7 +505,7 @@
 </div>
 
 <style>
-  .chat-panel { display: flex; flex-direction: column; height: 100%; }
+  .chat-panel { display: flex; flex-direction: column; height: 100%; min-height: 0; }
   .panel-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border); }
   .panel-title { font-size: 14px; font-weight: 600; }
   .session-controls { display: flex; gap: 6px; align-items: center; }
@@ -513,7 +513,7 @@
   .btn-new-session:hover { background: var(--bg-hover); color: var(--text-primary); }
   .btn-clear-history { background: none; border: 1px solid var(--border); color: var(--text-secondary); font-size: 11px; padding: 2px 8px; border-radius: 4px; cursor: pointer; }
   .btn-clear-history:hover { color: #f97583; border-color: #f97583; }
-  .messages { flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 12px; }
+  .messages { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 12px; }
   .empty-hint { color: var(--text-secondary); font-size: 13px; text-align: center; padding-top: 24px; }
   .message { padding: 8px 12px; border-radius: 8px; font-size: 13px; line-height: 1.5; }
   .message.user { background: var(--bg-tertiary); margin-left: 32px; }
@@ -553,7 +553,7 @@
   .message-text.markdown :global(strong) { font-weight: 600; }
   .message-text.markdown :global(a) { color: var(--accent); text-decoration: underline; }
   .message-text.markdown :global(hr) { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
-  .input-form { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border); }
+  .input-form { flex-shrink: 0; display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border); }
   .input-form textarea { flex: 1; padding: 8px 12px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); font-size: 13px; resize: none; font-family: inherit; }
   .btn { padding: 6px 14px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-tertiary); color: var(--text-primary); cursor: pointer; font-size: 13px; }
   .btn-stop { border-color: #da3633; color: #f97583; }

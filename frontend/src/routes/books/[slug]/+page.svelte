@@ -3,6 +3,7 @@
   import { onMount } from 'svelte';
   import BookEditor from '$lib/components/BookEditor.svelte';
   import UploadZone from '$lib/components/UploadZone.svelte';
+  import { visualViewport } from '$lib/viewport';
   import ChatPanel from '$lib/components/ChatPanel.svelte';
   import LorePanel from '$lib/components/LorePanel.svelte';
   import ChapterSidebar from '$lib/components/ChapterSidebar.svelte';
@@ -559,7 +560,7 @@
     </div>
   </div>
 {:else if book}
-  <div class="book-view">
+  <div class="book-view" use:visualViewport>
     <div class="toolbar">
       <a href="/" class="back-link">← Library</a>
       {#if editingTitle}
@@ -759,6 +760,7 @@
       {#if showLore}
         <div class="resize-handle" role="separator" aria-orientation="vertical" tabindex="0" onmousedown={startResize('lore')} onkeydown={resizeKeydown('lore')}></div>
         <div class="side-panel" style="width: {loreWidth}px; min-width: {loreWidth}px;">
+          <button class="panel-close" onclick={() => (showLore = false)} aria-label="Close wiki">✕</button>
           <LorePanel bind:this={lorePanel} {slug} />
         </div>
       {/if}
@@ -1148,12 +1150,47 @@
     }
 
     .side-panel {
-      position: absolute;
-      inset: 0;
+      position: fixed;
+      left: 0;
+      top: 0;
+      top: var(--vvt, 0px);
       width: 100% !important;
       min-width: 0 !important;
-      z-index: 30;
+      height: 100vh;
+      height: var(--vvh, 100dvh);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      z-index: 100;
       background: var(--bg-primary);
+    }
+
+    .side-panel > :global(*:not(.panel-close)) {
+      flex: 1;
+      min-height: 0;
+    }
+
+    .panel-close {
+      display: flex;
+      position: absolute;
+      top: 12px;
+      right: 14px;
+      z-index: 5;
+      width: 34px;
+      height: 34px;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+      font-size: 15px;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    .panel-close:hover {
+      border-color: var(--accent);
     }
 
     .resize-handle {
