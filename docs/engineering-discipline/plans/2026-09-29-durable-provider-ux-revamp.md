@@ -1,7 +1,7 @@
 # Durable Harness + Provider Config + UX Revamp — Design & Migration Plan
 
 - **Date:** 2026-09-29
-- **Status:** Revision 2 (2026-09-29) — built-in-first pass; **Phase 1.5 implemented**
+- **Status:** Revision 2 (2026-09-29) — built-in-first pass; **Phase 1.5, Phase 2, and Phase 3 (+ responsive layouts) implemented**
 - **Revision 2 changes:** prompt as registry `section`s (not stored `instructions`), `reset`/`fork` (not custom replace), built-in `ConversationTranscript` (not a hand-written ops applier), the documented `models.json` schema, durable tasks for lore/chapter-split, and `beforeTool`/`afterTool` invariants.
 - **Scope:** `agent/` (rewrite), `backend/` (contract + settings), `frontend/` (transport + full UX revamp), `k8s/`
 - **Decisions locked by owner:**
@@ -587,6 +587,8 @@ Settings (/settings)             → Models & Providers, Appearance, Data
 | **3. Provider config** | Encrypted config, provider/model catalog, test endpoint, env fallback + seed | Add/test/select provider end-to-end; key never returned |
 | **4. UX revamp** | Tokens, AppShell, responsive, screens, component rework, Settings UI | svelte-check, a11y, visual snapshots |
 | **5. Rollout** | Migration/backfill, backup, docs, remove `PI_MODEL`, cleanup | Fresh deploy + restore drill |
+
+**Pulled forward:** the mobile/responsive layout landed with Phase 3 — library stacking, book chapter rail as an off-canvas overlay, full-screen assistant/wiki panels, stacked knowledge panes, and a collapsing settings grid (verified at 390×844 and 1440×900).
 
 **Sequencing rationale:** 1→1.5 removes the remaining custom re-implementations before the backend binds to them; 2 unblocks the durable transport; 3 is small and independent once the model registry exists; 4 is the largest surface and benefits from the stable `pi.live` shape.
 
