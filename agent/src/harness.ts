@@ -5,17 +5,12 @@ import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import { createModels } from "@earendil-works/pi-ai/models";
-import { deepseekProvider } from "@earendil-works/pi-ai/providers/deepseek";
-import { openaiProvider } from "@earendil-works/pi-ai/providers/openai";
-import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic";
-import { googleProvider } from "@earendil-works/pi-ai/providers/google";
-import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
+import { getDefaultModel, getModels, getProviderCatalog, getSettings } from "./llm.js";
 import { WebTools } from "./tools/web.js";
 import { KnowledgeExtension } from "./extensions/knowledge.js";
 import { StoryExtension } from "./extensions/story.js";
 import { InvariantsExtension } from "./extensions/invariants.js";
-import { DURABLE_DB, LIBRARY_ROOT, MODEL, SHARED_SLUG, durableDir } from "./config.js";
+import { DURABLE_DB, LIBRARY_ROOT, SHARED_SLUG, durableDir } from "./config.js";
 
 export type DurableHarness = Awaited<ReturnType<typeof Harness.open>>;
 export type ConversationMode = "story" | "shared";
@@ -42,35 +37,7 @@ const PROMPT_VERSION = 2;
 
 // ── Providers (Phase 3 replaces env credentials with the encrypted config) ──
 
-const ENV_KEYS: Record<string, string> = {
-  deepseek: "DEEPSEEK_API_KEY",
-  openai: "OPENAI_API_KEY",
-  anthropic: "ANTHROPIC_API_KEY",
-  google: "GOOGLE_API_KEY",
-  openrouter: "OPENROUTER_API_KEY",
-};
-
-const credentialStore = {
-  async read(providerId: string) {
-    const envVar = ENV_KEYS[providerId];
-    const key = envVar ? process.env[envVar] : undefined;
-    return key ? { type: "api_key" as const, key } : undefined;
-  },
-  async list() {
-    return Object.entries(ENV_KEYS)
-      .filter(([, envVar]) => Boolean(process.env[envVar]))
-      .map(([providerId]) => ({ providerId, type: "api_key" as const }));
-  },
-  async modify() {
-    return undefined;
-  },
-  async delete() {},
-};
-
-const models = createModels({ credentials: credentialStore });
-for (const factory of [deepseekProvider, openaiProvider, anthropicProvider, googleProvider, openrouterProvider]) {
-  models.setProvider(factory());
-}
+const models = getModels();
 
 const registry = createRegistry();
 registry.install(CodingTools);
@@ -130,9 +97,10 @@ export function conversationCwd(slug: string, mode: ConversationMode): string {
 export async function configureConversation(conv: Conversation, slug: string, mode: ConversationMode): Promise<void> {
   const cwd = conversationCwd(slug, mode);
   mkdirSync(cwd, { recursive: true });
+  const llm = getDefaultModel();
   const change: AgentChange = {
-    model: { provider: MODEL.provider, modelId: MODEL.modelId },
-    thinkingLevel: "off",
+    model: { provider: llm.provider, modelId: llm.modelId },
+    thinkingLevel: llm.thinkingLevel as AgentChange["thinkingLevel"],
     // Craft rules come from registry sections; clear the Phase 1 stored prompt.
     instructions: null,
     cwd,
@@ -143,10 +111,8 @@ export async function configureConversation(conv: Conversation, slug: string, mo
 }
 
 /** One-time migration for conversations that stored the prompt as `instructions`. */
-export async function ensureConversationsConfigured(harness: DurableHarness): Promise<void> {
-  const meta = await harness.snapshot(PromptVersionDoc, BACKGROUND_CONTEXT);
-  if ((meta?.promptVersion ?? 0) >= PROMPT_VERSION) return;
-
+/** Re-apply the current model/sections to every mapped conversation. */
+export async function reconfigureAll(harness: DurableHarness): Promise<void> {
   const books = await getSessionMap(harness);
   for (const [key, id] of Object.entries(books)) {
     const mode: ConversationMode = key === SHARED_SLUG ? "shared" : "story";
@@ -154,6 +120,13 @@ export async function ensureConversationsConfigured(harness: DurableHarness): Pr
     const conversation = await harness.conversation(id, BACKGROUND_CONTEXT);
     if (conversation) await configureConversation(conversation, slug, mode);
   }
+}
+
+export async function ensureConversationsConfigured(harness: DurableHarness): Promise<void> {
+  const meta = await harness.snapshot(PromptVersionDoc, BACKGROUND_CONTEXT);
+  if ((meta?.promptVersion ?? 0) >= PROMPT_VERSION) return;
+
+  await reconfigureAll(harness);
 
   await harness.commit(async (tx) => {
     const doc = await tx.doc(PromptVersionDoc);
@@ -247,26 +220,17 @@ export async function usageFor(harness: DurableHarness, id: ConversationId) {
 // ── Catalog ─────────────────────────────────────────────────────────
 
 export function modelCatalog() {
-  return models.getProviders().map((provider) => ({
-    id: provider.id,
-    name: provider.name,
-    models: models.getModels(provider.id).map((model) => ({
-      id: model.id,
-      name: model.name,
-      contextWindow: model.contextWindow,
-      maxTokens: model.maxTokens,
-      input: model.input,
-    })),
-  }));
+  return getProviderCatalog();
 }
 
 export function configuredProviders() {
-  return Object.entries(ENV_KEYS).map(([id, envVar]) => ({
-    id,
-    configured: Boolean(process.env[envVar]),
+  return getSettings().providers.map((provider) => ({
+    id: provider.id,
+    configured: provider.configured,
   }));
 }
 
 export function currentModel() {
-  return MODEL;
+  const llm = getDefaultModel();
+  return { provider: llm.provider, modelId: llm.modelId };
 }

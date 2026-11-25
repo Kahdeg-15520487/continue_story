@@ -57,6 +57,10 @@ spec:
             - secretRef:
                 name: agent-keys
                 optional: true
+            # Houses CONFIG_ENCRYPTION_KEY for the provider settings UI.
+            - secretRef:
+                name: agent-encryption
+                optional: true
           volumeMounts:
             - name: library
               mountPath: /library

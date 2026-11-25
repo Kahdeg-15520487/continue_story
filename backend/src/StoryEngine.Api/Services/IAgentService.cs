@@ -50,7 +50,16 @@ public interface IAgentService
     /// Raw entries page from the durable transcript (for ConversationTranscript).
     /// </summary>
     Task<string> GetEntriesAsync(string sessionId, int limit = 50, long? after = null, long? before = null, string? order = null, CancellationToken ct = default);
+
+    /// <summary>LLM provider settings (keys masked) from the agent.</summary>
+    Task<AgentResponse> GetLlmSettingsAsync(CancellationToken ct = default);
+    Task<AgentResponse> SaveProviderAsync(string json, CancellationToken ct = default);
+    Task<AgentResponse> DeleteProviderAsync(string providerId, CancellationToken ct = default);
+    Task<AgentResponse> TestProviderAsync(string providerId, CancellationToken ct = default);
+    Task<AgentResponse> SetDefaultModelAsync(string json, CancellationToken ct = default);
 }
 
 public record SessionInfo(string SessionId, string BookSlug, string Mode, int MessageCount, long TokenUsed, long TokenLimit);
 public record SessionSummary(string Id, string BookSlug, string Age, string Idle, int TokenCount);
+
+public record AgentResponse(int StatusCode, string Body);

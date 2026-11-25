@@ -135,6 +135,7 @@
       </div>
     {/if}
     <a href="/knowledge" class="kb-link">🧠 Knowledge Base</a>
+    <a href="/settings" class="kb-link">⚙️ Settings</a>
 
     {#if loading}
       <p class="loading">Loading...</p>
@@ -443,5 +444,28 @@
     max-width: min(600px, 90vw);
     text-align: center;
     overflow-wrap: anywhere;
+  }
+
+  @media (max-width: 760px) {
+    .library-page {
+      flex-direction: column;
+      height: 100dvh;
+    }
+
+    .sidebar {
+      width: 100%;
+      min-width: 0;
+      max-height: 42vh;
+      border-right: none;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .sidebar-header {
+      padding: 12px 16px;
+    }
+
+    .main-content {
+      align-items: stretch;
+    }
   }
 </style>

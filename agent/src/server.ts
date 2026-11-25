@@ -4,13 +4,13 @@ import { AssistantEntry } from "@earendil-works/pi-durable";
 import type { AgentChange, ConversationId, EntryId } from "@earendil-works/pi-durable";
 import {
   currentModel,
-  configuredProviders,
   findKeyForId,
   forkConversation,
   getOrCreateConversation,
   getSessionMap,
   listConversations,
   modelCatalog,
+  reconfigureAll,
   resetConversation,
   unmapConversation,
   usageFor,
@@ -18,6 +18,7 @@ import {
   type DurableHarness,
 } from "./harness.js";
 import { LIBRARY_ROOT, PORT } from "./config.js";
+import { deleteProvider, getSettings, saveProvider, setDefaultModel, testProvider } from "./llm.js";
 
 function cors(): Record<string, string> {
   return {
@@ -117,14 +118,65 @@ async function handleRequest(harness: DurableHarness, req: IncomingMessage, res:
     return;
   }
 
-  // Phase 3 replaces this stub with the encrypted provider config.
   if (path === "/api/settings/llm" && method === "GET") {
-    sendJson(res, 200, {
-      providers: configuredProviders(),
-      defaultProvider: currentModel().provider,
-      defaultModelId: currentModel().modelId,
-      thinkingLevel: "off",
-    });
+    sendJson(res, 200, getSettings());
+    return;
+  }
+
+  if (path === "/api/settings/llm/providers" && method === "POST") {
+    try {
+      const body = await readJson(req);
+      const provider = saveProvider({
+        id: String(body.id ?? ""),
+        name: typeof body.name === "string" ? body.name : undefined,
+        kind: typeof body.kind === "string" ? body.kind : undefined,
+        baseUrl: typeof body.baseUrl === "string" && body.baseUrl ? body.baseUrl : undefined,
+        api: typeof body.api === "string" && body.api ? body.api : undefined,
+        apiKey: typeof body.apiKey === "string" && body.apiKey ? body.apiKey : undefined,
+        models: Array.isArray(body.models)
+          ? body.models.filter((m: any) => m && typeof m.id === "string")
+          : undefined,
+      } as any);
+      await reconfigureAll(harness);
+      sendJson(res, 200, { provider });
+    } catch (err: any) {
+      sendJson(res, 400, { error: err?.message ?? String(err) });
+    }
+    return;
+  }
+
+  const deleteProviderMatch = path.match(/^\/api\/settings\/llm\/providers\/([a-z0-9_-]+)$/);
+  if (deleteProviderMatch && method === "DELETE") {
+    const deleted = deleteProvider(deleteProviderMatch[1]);
+    if (!deleted) {
+      sendJson(res, 404, { error: "Provider not found" });
+      return;
+    }
+    await reconfigureAll(harness);
+    sendJson(res, 200, { deleted: true });
+    return;
+  }
+
+  const testProviderMatch = path.match(/^\/api\/settings\/llm\/providers\/([a-z0-9_-]+)\/test$/);
+  if (testProviderMatch && method === "POST") {
+    const result = await testProvider(testProviderMatch[1]);
+    sendJson(res, result.ok ? 200 : 400, result);
+    return;
+  }
+
+  if (path === "/api/settings/llm/default" && method === "PUT") {
+    try {
+      const body = await readJson(req);
+      const result = setDefaultModel({
+        provider: typeof body.provider === "string" ? body.provider : undefined,
+        modelId: typeof body.modelId === "string" ? body.modelId : undefined,
+        thinkingLevel: typeof body.thinkingLevel === "string" ? body.thinkingLevel : undefined,
+      });
+      await reconfigureAll(harness);
+      sendJson(res, 200, { default: result });
+    } catch (err: any) {
+      sendJson(res, 400, { error: err?.message ?? String(err) });
+    }
     return;
   }
 

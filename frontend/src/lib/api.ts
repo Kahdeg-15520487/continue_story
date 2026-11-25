@@ -407,6 +407,35 @@ export const api = {
     return controller;
   },
 
+  // LLM provider settings
+  getLlmSettings: () => request<any>('/settings/llm'),
+
+  saveLlmProvider: (data: {
+    id: string;
+    name?: string;
+    kind?: string;
+    baseUrl?: string;
+    api?: string;
+    apiKey?: string;
+    models?: Array<{ id: string; name?: string }>;
+  }) =>
+    request<{ provider: any }>('/settings/llm/providers', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  deleteLlmProvider: (id: string) =>
+    request<{ deleted: boolean }>(`/settings/llm/providers/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+
+  testLlmProvider: (id: string) =>
+    request<any>(`/settings/llm/providers/${encodeURIComponent(id)}/test`, { method: 'POST' }),
+
+  setLlmDefault: (data: { provider: string; modelId: string; thinkingLevel?: string }) =>
+    request<any>('/settings/llm/default', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
   // Conversion status
   getConversionStatus: (slug: string) =>
     request<ConversionStatus>(`/books/${slug}/upload/status`),

@@ -86,6 +86,21 @@ public class MockAgentService : IAgentService
         return Task.FromResult("{\"items\":[],\"next\":null}");
     }
 
+    public Task<AgentResponse> GetLlmSettingsAsync(CancellationToken ct = default) =>
+        Task.FromResult(new AgentResponse(200, "{\"providers\":[],\"default\":{}}"));
+
+    public Task<AgentResponse> SaveProviderAsync(string json, CancellationToken ct = default) =>
+        Task.FromResult(new AgentResponse(200, "{}"));
+
+    public Task<AgentResponse> DeleteProviderAsync(string providerId, CancellationToken ct = default) =>
+        Task.FromResult(new AgentResponse(200, "{\"deleted\":true}"));
+
+    public Task<AgentResponse> TestProviderAsync(string providerId, CancellationToken ct = default) =>
+        Task.FromResult(new AgentResponse(200, "{\"ok\":true}"));
+
+    public Task<AgentResponse> SetDefaultModelAsync(string json, CancellationToken ct = default) =>
+        Task.FromResult(new AgentResponse(200, "{}"));
+
     public Task<string?> GetLastUserMessageAsync(string bookSlug, CancellationToken ct = default)
     {
         return Task.FromResult<string?>(null);

@@ -88,6 +88,7 @@ InlineEditEndpoints.Map(app);
 KnowledgeEndpoints.Map(app);
 KnowledgeChatEndpoints.Map(app);
 ExportEndpoints.Map(app);
+SettingsEndpoints.Map(app);
 
 if (!app.Environment.IsEnvironment("Testing"))
 {

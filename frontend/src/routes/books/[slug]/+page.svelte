@@ -36,6 +36,12 @@
   let lorePanel: LorePanel | null = $state(null);
   let editorRef: BookEditor | null = $state(null);
 
+  onMount(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 900) {
+      sidebarCollapsed = true;
+    }
+  });
+
   async function saveTitle() {
     if (!book || !titleInput.trim() || titleInput.trim() === book.title) {
       editingTitle = false;
@@ -1095,5 +1101,62 @@
     border-bottom: 1px solid rgba(210, 153, 34, 0.2);
     color: #d29922;
     font-size: 12px;
+  }
+
+  @media (max-width: 900px) {
+    .book-view {
+      height: 100dvh;
+    }
+
+    .toolbar {
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 8px 12px;
+    }
+
+    .book-title {
+      font-size: 15px;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .toolbar-actions {
+      flex-wrap: wrap;
+      margin-left: auto;
+    }
+
+    .main-area {
+      position: relative;
+    }
+
+    :global(.main-area > .sidebar) {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      width: 260px;
+      min-width: 260px;
+      z-index: 25;
+      box-shadow: 8px 0 24px rgba(0, 0, 0, 0.45);
+    }
+
+    .side-panel {
+      position: absolute;
+      inset: 0;
+      width: 100% !important;
+      min-width: 0 !important;
+      z-index: 30;
+      background: var(--bg-primary);
+    }
+
+    .resize-handle {
+      display: none;
+    }
+
+    .editor-pane {
+      width: 100%;
+    }
   }
 </style>

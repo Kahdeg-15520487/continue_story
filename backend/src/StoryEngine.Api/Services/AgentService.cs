@@ -241,6 +241,31 @@ public class AgentService : IAgentService
         return await response.Content.ReadAsStringAsync(ct);
     }
 
+    public Task<AgentResponse> GetLlmSettingsAsync(CancellationToken ct = default) =>
+        SendAsync(HttpMethod.Get, "/api/settings/llm", null, ct);
+
+    public Task<AgentResponse> SaveProviderAsync(string json, CancellationToken ct = default) =>
+        SendAsync(HttpMethod.Post, "/api/settings/llm/providers", json, ct);
+
+    public Task<AgentResponse> DeleteProviderAsync(string providerId, CancellationToken ct = default) =>
+        SendAsync(HttpMethod.Delete, $"/api/settings/llm/providers/{providerId}", null, ct);
+
+    public Task<AgentResponse> TestProviderAsync(string providerId, CancellationToken ct = default) =>
+        SendAsync(HttpMethod.Post, $"/api/settings/llm/providers/{providerId}/test", "{}", ct);
+
+    public Task<AgentResponse> SetDefaultModelAsync(string json, CancellationToken ct = default) =>
+        SendAsync(HttpMethod.Put, "/api/settings/llm/default", json, ct);
+
+    private async Task<AgentResponse> SendAsync(HttpMethod method, string path, string? body, CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(method, $"{_agentBaseUrl}{path}");
+        if (body is not null)
+            request.Content = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _http.SendAsync(request, ct);
+        var text = await response.Content.ReadAsStringAsync(ct);
+        return new AgentResponse((int)response.StatusCode, text);
+    }
+
     // ── helpers ────────────────────────────────────────────────────────
 
     private async Task SubmitInputAsync(string sessionId, string message, CancellationToken ct)

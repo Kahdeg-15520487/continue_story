@@ -137,4 +137,36 @@
   .resize-handle:active {
     background: var(--accent, #58a6ff);
   }
+
+  @media (max-width: 860px) {
+    .knowledge-body {
+      flex-direction: column;
+    }
+
+    .kb-viewer-pane {
+      border-right: none;
+      border-bottom: 1px solid var(--border);
+      min-height: 0;
+    }
+
+    .kb-chat-pane {
+      width: 100% !important;
+      min-width: 0 !important;
+      max-height: 48vh;
+    }
+
+    .resize-handle {
+      display: none;
+    }
+
+    .knowledge-header {
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 10px 14px;
+    }
+
+    .knowledge-header h1 {
+      font-size: 16px;
+    }
+  }
 </style>
