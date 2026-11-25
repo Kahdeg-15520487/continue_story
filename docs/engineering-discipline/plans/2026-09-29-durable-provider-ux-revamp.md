@@ -1,7 +1,7 @@
 # Durable Harness + Provider Config + UX Revamp — Design & Migration Plan
 
 - **Date:** 2026-09-29
-- **Status:** Revision 2 (2026-09-29) — built-in-first pass
+- **Status:** Revision 2 (2026-09-29) — built-in-first pass; **Phase 1.5 implemented**
 - **Revision 2 changes:** prompt as registry `section`s (not stored `instructions`), `reset`/`fork` (not custom replace), built-in `ConversationTranscript` (not a hand-written ops applier), the documented `models.json` schema, durable tasks for lore/chapter-split, and `beforeTool`/`afterTool` invariants.
 - **Scope:** `agent/` (rewrite), `backend/` (contract + settings), `frontend/` (transport + full UX revamp), `k8s/`
 - **Decisions locked by owner:**
@@ -591,6 +591,10 @@ Settings (/settings)             → Models & Providers, Appearance, Data
 **Sequencing rationale:** 1→1.5 removes the remaining custom re-implementations before the backend binds to them; 2 unblocks the durable transport; 3 is small and independent once the model registry exists; 4 is the largest surface and benefits from the stable `pi.live` shape.
 
 ### Phase 1.5 — align the committed Phase 1 code
+
+**Status: implemented.** Prompt sections, invariant hooks, `reset`/`fork`,
+scan-based listing, live settings, identity, and `?from`/`entries` are in the
+agent; the client adapter lands in Phase 2.
 
 The committed Phase 1 (`6f18f47`) still contains the pre-revision choices. Before
 Phase 2:

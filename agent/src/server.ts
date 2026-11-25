@@ -1,19 +1,22 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "http";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import type { AgentChange, ConversationId } from "@earendil-works/pi-durable";
+import type { AgentChange, ConversationId, EntryId } from "@earendil-works/pi-durable";
 import {
   currentModel,
   configuredProviders,
   findKeyForId,
+  forkConversation,
   getOrCreateConversation,
   getSessionMap,
+  listConversations,
   modelCatalog,
-  replaceConversation,
+  resetConversation,
+  unmapConversation,
   usageFor,
   type ConversationMode,
   type DurableHarness,
 } from "./harness.js";
-import { LIBRARY_ROOT, PORT, SHARED_SLUG } from "./config.js";
+import { LIBRARY_ROOT, PORT } from "./config.js";
 
 function cors(): Record<string, string> {
   return {
@@ -113,8 +116,7 @@ async function handleRequest(harness: DurableHarness, req: IncomingMessage, res:
   }
 
   if (path === "/api/conversations" && method === "GET") {
-    const books = await getSessionMap(harness);
-    sendJson(res, 200, { conversations: Object.entries(books).map(([key, id]) => ({ key, id })) });
+    sendJson(res, 200, { conversations: await listConversations(harness) });
     return;
   }
 
@@ -154,15 +156,12 @@ async function handleRequest(harness: DurableHarness, req: IncomingMessage, res:
     }
 
     if (!action && method === "DELETE") {
-      const key = await findKeyForId(harness, id);
-      if (!key) {
+      const unmapped = await unmapConversation(harness, id);
+      if (!unmapped) {
         sendJson(res, 404, { error: "Conversation is not mapped to a book" });
         return;
       }
-      const mode: ConversationMode = key === SHARED_SLUG ? "shared" : "story";
-      const slug = mode === "shared" ? SHARED_SLUG : key;
-      const replacement = await replaceConversation(harness, slug, mode);
-      sendJson(res, 200, { conversationId: replacement.id, replaced: id });
+      sendJson(res, 200, { unmapped: true });
       return;
     }
 
@@ -190,6 +189,46 @@ async function handleRequest(harness: DurableHarness, req: IncomingMessage, res:
     if (action === "abort" && method === "POST") {
       await conversation.abort(BACKGROUND_CONTEXT);
       sendJson(res, 200, { aborted: true });
+      return;
+    }
+
+    if (action === "reset" && method === "POST") {
+      const body = await readJson(req);
+      const reset = await resetConversation(
+        harness,
+        id,
+        typeof body.handoff === "string" ? body.handoff : undefined,
+      );
+      if (!reset) {
+        sendJson(res, 404, { error: "Conversation not found" });
+        return;
+      }
+      sendJson(res, 200, { reset: true });
+      return;
+    }
+
+    if (action === "fork" && method === "POST") {
+      const body = await readJson(req);
+      const at = typeof body.at === "number" ? (body.at as EntryId) : undefined;
+      const fork = await forkConversation(harness, id, at);
+      if (!fork) {
+        sendJson(res, 400, { error: "Nothing to fork" });
+        return;
+      }
+      sendJson(res, 200, { conversationId: fork.id });
+      return;
+    }
+
+    if (action === "entries" && method === "GET") {
+      const limit = Math.min(Math.max(Number(url.searchParams.get("limit") ?? 50), 1), 200);
+      const after = url.searchParams.get("after");
+      const before = url.searchParams.get("before");
+      const order = url.searchParams.get("order") === "ascending" ? "ascending" : "descending";
+      const query: { minEntryId?: EntryId; maxEntryId?: EntryId; order: "ascending" | "descending" } = { order };
+      if (after) query.minEntryId = Number(after) as EntryId;
+      if (before) query.maxEntryId = Number(before) as EntryId;
+      const page = await conversation.entries(query, limit, undefined, BACKGROUND_CONTEXT);
+      sendJson(res, 200, { items: page.items, next: page.next ?? null });
       return;
     }
 
@@ -230,7 +269,9 @@ async function handleRequest(harness: DurableHarness, req: IncomingMessage, res:
     }
 
     if (action === "stream" && method === "GET") {
-      await handleStream(req, res, conversation);
+      const from = url.searchParams.get("from");
+      const window = from ? { from: Number(from) as EntryId } : undefined;
+      await handleStream(req, res, conversation, window);
       return;
     }
 
@@ -241,12 +282,17 @@ async function handleRequest(harness: DurableHarness, req: IncomingMessage, res:
   sendJson(res, 404, { error: "Not found" });
 }
 
-async function handleStream(req: IncomingMessage, res: ServerResponse, conversation: Awaited<ReturnType<DurableHarness["conversation"]>>): Promise<void> {
+async function handleStream(
+  req: IncomingMessage,
+  res: ServerResponse,
+  conversation: Awaited<ReturnType<DurableHarness["conversation"]>>,
+  window?: { from?: EntryId },
+): Promise<void> {
   if (!conversation) {
     sendJson(res, 404, { error: "Conversation not found" });
     return;
   }
-  const watch = await conversation.watch(BACKGROUND_CONTEXT);
+  const watch = await conversation.watch(BACKGROUND_CONTEXT, window);
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache, no-transform",
