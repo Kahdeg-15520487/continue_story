@@ -512,12 +512,17 @@ Settings (/settings)             → Models & Providers, Appearance, Data
 
 ---
 
-## 11. Open questions (resolve before Phase 0 exit)
+## 11. Open questions
 
-1. **pi-durable conversation creation:** exact `createConversation()` signature and how to persist the book→conversation map atomically (`defineDocument` API not in the npm README excerpt).
-2. **Provider auth:** do 1.6.0 factories accept `{apiKey}` or must we use `createProvider({auth})`? Confirm for deepseek/openai/anthropic/openrouter/custom.
-3. **Model catalog for the UI:** `models.getModels()` requires providers to be registered first — confirm the catalog is available before a key is entered (static `getModels()` on the factory).
-4. **`pi.live` shape stability:** confirm the run/tool/partial fields we map to UI.
+**Resolved by the Phase 0 spike** (details in `2026-09-29-durable-spike-findings.md`):
+
+1. ~~**pi-durable conversation creation**~~ — `tx.createConversation({ ownership: { kind: "ownerless" } })` inside `harness.commit`; the book→conversation map is persisted atomically with `defineDoc({ kind: "app.sessions", version: 1, scope: "session", … })`.
+2. ~~**Provider auth**~~ — built-in factories stay arg-less; inject keys via `createModels({ credentials: store })` where `CredentialStore.read()` returns `{ type: "api_key", key }`. No env var required.
+3. ~~**Model catalog before a key**~~ — `models.getModels()` is the static pre-key catalog; `models.getAvailable()` is credential-gated (empty without a key).
+4. ~~**`pi.live` shape**~~ — `run?`, `generation?{attempt,message,retry,deferred}`, `tools?: ToolSlot[]`, `nestedTools?`, `compactions?`, `runFailure?`. Tool slots live under `tools`, not `toolCalls`.
+
+**Still owner decisions:**
+
 5. **Skills:** keep `/skills` lore-extraction as a section or a tool?
 6. **Auth:** Settings exposes provider keys; confirm Authelia/ingress is the only auth boundary and whether an admin-only gate is needed.
 7. **Backfill:** do we import existing chat history, or treat it as read-only legacy?
