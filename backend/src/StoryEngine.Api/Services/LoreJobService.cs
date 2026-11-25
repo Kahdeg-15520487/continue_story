@@ -88,7 +88,7 @@ public class LoreJobService
             var sessionId = await agentService.EnsureSessionAsync(slug);
             await agentService.SendPromptAsync(sessionId, prompt);
 
-            try { await agentService.KillSessionAsync(sessionId); } catch { }
+            try { await agentService.ResetSessionAsync(sessionId); } catch { }
 
             // Count what was created
             var totalEntities = 0;

@@ -91,7 +91,7 @@ public static class ChatHistoryEndpoints
                 : null;
             if (!string.IsNullOrEmpty(sessionId))
             {
-                try { await agentService.KillSessionAsync(sessionId); } catch { }
+                try { await agentService.ResetSessionAsync(sessionId); } catch { }
             }
 
             IQueryable<ChatMessage> query;

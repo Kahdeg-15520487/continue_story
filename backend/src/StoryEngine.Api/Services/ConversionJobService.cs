@@ -125,7 +125,7 @@ public class ConversionJobService
         }
         finally
         {
-            try { await agentService.KillSessionAsync(sessionId); } catch { }
+            try { await agentService.ResetSessionAsync(sessionId); } catch { }
         }
     }
 }

@@ -124,7 +124,7 @@ public static class InlineEditEndpoints
             {
                 try
                 {
-                    await agentService.KillSessionAsync(sessionId, ct);
+                    await agentService.ResetSessionAsync(sessionId, null, ct);
                 }
                 catch { }
             }

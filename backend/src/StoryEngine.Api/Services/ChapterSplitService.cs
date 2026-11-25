@@ -250,7 +250,7 @@ public class ChapterSplitService
         }
         finally
         {
-            try { await agentService.KillSessionAsync(sessionId); } catch { }
+            try { await agentService.ResetSessionAsync(sessionId); } catch { }
         }
     }
 
@@ -469,7 +469,7 @@ public class ChapterSplitService
         }
         finally
         {
-            try { await agentService.KillSessionAsync(sessionId); } catch { }
+            try { await agentService.ResetSessionAsync(sessionId); } catch { }
         }
     }
 
@@ -557,7 +557,7 @@ public class ChapterSplitService
             }
             finally
             {
-                try { await agentService.KillSessionAsync(sessionId); } catch { }
+                try { await agentService.ResetSessionAsync(sessionId); } catch { }
             }
         }
 

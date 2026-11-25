@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "http";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { AssistantEntry } from "@earendil-works/pi-durable";
 import type { AgentChange, ConversationId, EntryId } from "@earendil-works/pi-durable";
 import {
   currentModel,
@@ -48,6 +49,18 @@ async function readJson(req: IncomingMessage): Promise<any> {
 
 function sse(body: unknown): string {
   return `data: ${JSON.stringify(body)}\n\n`;
+}
+
+function assistantText(message: unknown): string {
+  const content = (message as { content?: unknown } | undefined)?.content;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .filter((block: any) => block?.type === "text" && typeof block.text === "string")
+      .map((block: any) => block.text as string)
+      .join("");
+  }
+  return "";
 }
 
 function parseMode(value: unknown): ConversationMode {
@@ -146,9 +159,11 @@ async function handleRequest(harness: DurableHarness, req: IncomingMessage, res:
     if (!action && method === "GET") {
       const agent = await conversation.agent(BACKGROUND_CONTEXT);
       const key = await findKeyForId(harness, id);
+      const view = await conversation.context(BACKGROUND_CONTEXT);
       sendJson(res, 200, {
         id,
         key,
+        messageCount: view.entries.length,
         agent: { model: agent.model, thinkingLevel: agent.thinkingLevel, cwd: agent.cwd },
         usage: await usageFor(harness, id),
       });
@@ -183,6 +198,34 @@ async function handleRequest(harness: DurableHarness, req: IncomingMessage, res:
         BACKGROUND_CONTEXT,
       );
       sendJson(res, 200, { submissionId: submission.id });
+      return;
+    }
+
+    if (action === "prompt" && method === "POST") {
+      const body = await readJson(req);
+      if (typeof body.content !== "string" || !body.content.trim()) {
+        sendJson(res, 400, { error: "content is required" });
+        return;
+      }
+      const submission = await conversation.submit(
+        { type: "input", content: body.content },
+        BACKGROUND_CONTEXT,
+      );
+      const settled = await submission.wait(BACKGROUND_CONTEXT);
+      if (settled.status !== "done") {
+        sendJson(res, 502, { error: `Run ended ${settled.status}`, detail: (settled as any).reason ?? null });
+        return;
+      }
+      if (settled.type !== "input" || settled.answer === undefined) {
+        sendJson(res, 502, { error: "Run produced no answer entry" });
+        return;
+      }
+      const entry = await conversation.commit(
+        (tx) => tx.entry(AssistantEntry, settled.answer),
+        BACKGROUND_CONTEXT,
+      );
+      const text = (entry?.model ?? []).map((message) => assistantText(message)).join("");
+      sendJson(res, 200, { data: text });
       return;
     }
 
@@ -301,22 +344,31 @@ async function handleStream(
     ...cors(),
   });
   res.flushHeaders();
-  res.write(sse({ v: 1, kind: "snapshot", value: watch.value }));
+  res.write(sse({ v: 1, kind: "value", value: watch.value, ops: [] }));
 
   let closed = false;
   const stop = () => {
     if (closed) return;
     closed = true;
-    void watch.stop().catch(() => {});
-    try {
-      res.end();
-    } catch {}
+    void watch
+      .stop()
+      .then((end) => {
+        try {
+          res.write(sse({ v: 1, kind: "end", reason: end.kind }));
+        } catch {}
+      })
+      .catch(() => {})
+      .finally(() => {
+        try {
+          res.end();
+        } catch {}
+      });
   };
 
   watch.start(async (call) => {
     if (closed || call.kind !== "value") return;
     try {
-      res.write(sse({ v: 1, kind: "ops", ops: call.ops }));
+      res.write(sse({ v: 1, kind: "value", value: call.value, ops: call.ops }));
     } catch {
       stop();
     }

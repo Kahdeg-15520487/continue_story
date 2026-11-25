@@ -175,15 +175,13 @@ public static class ChatEndpoints
 
                     try
                     {
-                        var parsed = JsonDocument.Parse(evt);
-                        if (parsed.RootElement.TryGetProperty("type", out var type) && type.GetString() == "message_update")
+                        using var parsed = JsonDocument.Parse(evt);
+                        var root = parsed.RootElement;
+                        if (root.TryGetProperty("kind", out var kind) && kind.GetString() == "value"
+                            && root.TryGetProperty("value", out var value))
                         {
-                            if (parsed.RootElement.TryGetProperty("assistantMessageEvent", out var asm)
-                                && asm.TryGetProperty("type", out var asmType) && asmType.GetString() == "text_delta"
-                                && asm.TryGetProperty("delta", out var delta))
-                            {
-                                assistantText += delta.GetString() ?? "";
-                            }
+                            var text = NewestAssistantText(value);
+                            if (!string.IsNullOrEmpty(text)) assistantText = text;
                         }
                     }
                     catch { }
@@ -288,6 +286,24 @@ public static class ChatEndpoints
             return Results.Ok(new { aborted = true, lastUserMessage = lastMsg });
         });
 
+        // Durable transcript page (used by ConversationTranscript on the client).
+        app.MapGet("/api/books/{slug}/chat/entries", async (
+            string slug,
+            int? limit,
+            long? after,
+            long? before,
+            string? order,
+            IAgentService agentService,
+            CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(slug) || slug.Contains("..") || slug.Contains('/') || slug.Contains('\\'))
+                return Results.BadRequest(new { error = "Invalid book slug" });
+
+            var sessionId = await agentService.EnsureSessionAsync(slug, ct);
+            var json = await agentService.GetEntriesAsync(sessionId, limit ?? 50, after, before, order, ct);
+            return Results.Content(json, "application/json");
+        });
+
         // Retry: get last user message from session history
         app.MapGet("/api/books/{slug}/chat/last-message", async (
             string slug,
@@ -299,5 +315,48 @@ public static class ChatEndpoints
                 ? Results.Ok(new { lastUserMessage = lastMsg })
                 : Results.NotFound(new { error = "No previous message" });
         });
+    }
+
+    private static string NewestAssistantText(JsonElement value)
+    {
+        if (!value.TryGetProperty("entries", out var entries) || entries.ValueKind != JsonValueKind.Array)
+            return "";
+
+        var text = "";
+        foreach (var entry in entries.EnumerateArray())
+        {
+            if (!entry.TryGetProperty("kind", out var kind) || kind.GetString() != "pi.assistant") continue;
+            if (!entry.TryGetProperty("model", out var model) || model.ValueKind != JsonValueKind.Array) continue;
+            var first = model.EnumerateArray().FirstOrDefault();
+            if (first.ValueKind == JsonValueKind.Object && first.TryGetProperty("content", out var content))
+            {
+                var extracted = ExtractText(content);
+                if (!string.IsNullOrEmpty(extracted)) text = extracted;
+            }
+        }
+        return text;
+    }
+
+    private static string ExtractText(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.String) return element.GetString() ?? "";
+        if (element.ValueKind != JsonValueKind.Array) return "";
+
+        var sb = new StringBuilder();
+        foreach (var block in element.EnumerateArray())
+        {
+            if (block.ValueKind == JsonValueKind.String)
+            {
+                sb.Append(block.GetString());
+                continue;
+            }
+            if (block.ValueKind == JsonValueKind.Object
+                && block.TryGetProperty("type", out var type) && type.GetString() == "text"
+                && block.TryGetProperty("text", out var text) && text.ValueKind == JsonValueKind.String)
+            {
+                sb.Append(text.GetString());
+            }
+        }
+        return sb.ToString();
     }
 }

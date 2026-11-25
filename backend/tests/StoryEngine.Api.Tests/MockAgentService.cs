@@ -57,6 +57,12 @@ public class MockAgentService : IAgentService
         return Task.CompletedTask;
     }
 
+    public Task ResetSessionAsync(string sessionId, string? handoff = null, CancellationToken ct = default)
+    {
+        KilledSessions.Add(sessionId);
+        return Task.CompletedTask;
+    }
+
     public Task<SessionInfo> GetSessionInfoAsync(string sessionId, CancellationToken ct = default)
     {
         if (SessionInfos.TryGetValue(sessionId, out var info))
@@ -73,6 +79,11 @@ public class MockAgentService : IAgentService
     {
         KilledSessions.Add(sessionId);
         return Task.FromResult<string?>(null);
+    }
+
+    public Task<string> GetEntriesAsync(string sessionId, int limit = 50, long? after = null, long? before = null, string? order = null, CancellationToken ct = default)
+    {
+        return Task.FromResult("{\"items\":[],\"next\":null}");
     }
 
     public Task<string?> GetLastUserMessageAsync(string bookSlug, CancellationToken ct = default)

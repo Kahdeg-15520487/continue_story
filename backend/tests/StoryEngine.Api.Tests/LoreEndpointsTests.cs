@@ -11,11 +11,9 @@ public class LoreEndpointsTests : IntegrationTestBase
     private async Task<string> CreateBookWithWikiAsync(string title)
     {
         var slug = await CreateBookAsync(title);
-        CreateLibraryFile(slug, "wiki/characters.md", "# Characters\n- Alice");
-        CreateLibraryFile(slug, "wiki/locations.md", "# Locations\n- The Castle");
-        CreateLibraryFile(slug, "wiki/themes.md", "# Themes\n- Courage");
+        CreateLibraryFile(slug, "wiki/characters/alice.md", "# Alice\n- Protagonist");
+        CreateLibraryFile(slug, "wiki/locations/castle.md", "# The Castle\n- Setting");
         CreateLibraryFile(slug, "wiki/summary.md", "# Summary\nA great story");
-        CreateLibraryFile(slug, "wiki/chapter-summaries.md", "# Chapters\nCh 1 summary");
         return slug;
     }
 
@@ -26,15 +24,15 @@ public class LoreEndpointsTests : IntegrationTestBase
         var response = await Client.GetAsync($"/api/books/{slug}/lore");
         response.EnsureSuccessStatusCode();
         var body = await response.Content.ReadAsStringAsync();
-        Assert.Contains("characters.md", body);
-        Assert.Contains("chapter-summaries.md", body);
+        Assert.Contains("characters", body);
+        Assert.Contains("alice", body);
     }
 
     [Fact]
     public async Task GetLoreFile_Exists_ReturnsContent()
     {
         var slug = await CreateBookWithWikiAsync("Lore Get");
-        var response = await Client.GetAsync($"/api/books/{slug}/lore/characters.md");
+        var response = await Client.GetAsync($"/api/books/{slug}/lore/characters/alice.md");
         response.EnsureSuccessStatusCode();
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("Alice", body);
@@ -44,7 +42,7 @@ public class LoreEndpointsTests : IntegrationTestBase
     public async Task GetLoreFile_NotFound_Returns404()
     {
         var slug = await CreateBookWithWikiAsync("Lore Missing");
-        var response = await Client.GetAsync($"/api/books/{slug}/lore/nonexistent.md");
+        var response = await Client.GetAsync($"/api/books/{slug}/lore/characters/missing.md");
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 

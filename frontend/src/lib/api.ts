@@ -1,4 +1,6 @@
 import type { BookSummary, BookDetail, BookContent, CreateBookRequest, WikiIndex, UploadResult, ConversionStatus, ChatHistoryMessage } from './types';
+import { createTranscript } from './transcript';
+import { StreamAdapter } from './stream';
 
 const BASE = '/api';
 
@@ -20,6 +22,30 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     throw new Error(error.error || `HTTP ${res.status}`);
   }
   return res.json();
+}
+
+async function readSse(res: Response, onFrame: (evt: any) => void): Promise<void> {
+  const reader = res.body?.getReader();
+  if (!reader) return;
+  const decoder = new TextDecoder();
+  let buffer = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const messages = buffer.split('\n\n');
+    buffer = messages.pop()!;
+    for (const msg of messages) {
+      for (const line of msg.split('\n')) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          onFrame(JSON.parse(line.slice(6)));
+        } catch {
+          // Ignore parse errors
+        }
+      }
+    }
+  }
 }
 
 export const api = {
@@ -175,6 +201,25 @@ export const api = {
     options?: { activeChapterId?: string | null; sessionId?: string | null; onEditDone?: (chapterId: string) => void; onSessionInfo?: (sessionId: string) => void },
   ): AbortController {
     const controller = new AbortController();
+    const transcript = createTranscript(bookSlug);
+    let finished = false;
+    const done = () => {
+      if (finished) return;
+      finished = true;
+      onDone();
+    };
+    const adapter = new StreamAdapter({
+      onChunk,
+      onThinking,
+      onToolStart,
+      onToolEnd,
+      onSessionInfo: options?.onSessionInfo,
+      onEditDone: options?.onEditDone,
+      onError,
+      onDone: done,
+      onView: (view) => { transcript.merge(view); },
+    });
+
     fetch(`${BASE}/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -190,63 +235,15 @@ export const api = {
         if (!res.ok) {
           const err = await res.json().catch(() => ({ error: res.statusText }));
           onError?.(err.error || `HTTP ${res.status}`);
-          onDone();
+          done();
           return;
         }
-        const reader = res.body?.getReader();
-        if (!reader) return;
-        const decoder = new TextDecoder();
-        let sseBuffer = '';
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          sseBuffer += decoder.decode(value, { stream: true });
-          const messages = sseBuffer.split('\n\n');
-          sseBuffer = messages.pop()!;
-          for (const msg of messages) {
-            for (const line of msg.split('\n')) {
-              if (line.startsWith('data: ')) {
-                try {
-                  const evt = JSON.parse(line.slice(6));
-                  if (evt.type === 'agent_end') {
-                    // Don't return — there may be more events (edit_done, session_info)
-                    onDone();
-                  } else if (evt.type === 'session_info') {
-                    if (evt.sessionId) {
-                      options?.onSessionInfo?.(evt.sessionId);
-                    }
-                  } else if (evt.type === 'edit_done') {
-                    if (evt.chapterId) {
-                      options?.onEditDone?.(evt.chapterId);
-                    }
-                  } else if (evt.type === 'message_update') {
-                    const delta = evt.assistantMessageEvent;
-                    if (delta?.type === 'text_delta') {
-                      onChunk(delta.delta);
-                    } else if (delta?.type === 'thinking_delta') {
-                      onThinking?.(delta.delta);
-                    }
-                  } else if (evt.type === 'tool_execution_start') {
-                    onToolStart?.(evt.toolName, evt.args);
-                  } else if (evt.type === 'tool_execution_end') {
-                    onToolEnd?.(evt.toolName, evt.result, evt.isError);
-                  } else if (evt.type === 'error') {
-                    onError?.(evt.message || evt.error || 'Unknown error');
-                  }
-                } catch {
-                  // Ignore parse errors
-                }
-              }
-            }
-          }
-        }
-        onDone();
+        await readSse(res, (evt) => adapter.handle(evt));
+        done();
       })
       .catch((err) => {
-        if (err.name !== 'AbortError') {
-          onError?.(err.message || 'Network error');
-        }
-        onDone();
+        if (err.name !== 'AbortError') onError?.(err.message || 'Network error');
+        done();
       });
     return controller;
   },
@@ -263,6 +260,22 @@ export const api = {
     onThinking?: (text: string) => void,
   ): AbortController {
     const controller = new AbortController();
+    const transcript = createTranscript(bookSlug);
+    let finished = false;
+    let scratchPath = '';
+    const done = (path: string) => {
+      if (finished) return;
+      finished = true;
+      onDone(path);
+    };
+    const adapter = new StreamAdapter({
+      onChunk,
+      onThinking,
+      onError,
+      onDone: () => {},
+      onView: (view) => { transcript.merge(view); },
+    });
+
     fetch(`${BASE}/books/${bookSlug}/chapters/${encodeURIComponent(chapterId)}/inline-edit`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -273,51 +286,22 @@ export const api = {
         if (!res.ok) {
           const err = await res.json().catch(() => ({ error: res.statusText }));
           onError?.(err.error || `HTTP ${res.status}`);
-          onDone('');
+          done('');
           return;
         }
-        const reader = res.body?.getReader();
-        if (!reader) return;
-        const decoder = new TextDecoder();
-        let sseBuffer = '';
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          sseBuffer += decoder.decode(value, { stream: true });
-          const messages = sseBuffer.split('\n\n');
-          sseBuffer = messages.pop()!;
-          for (const msg of messages) {
-            for (const line of msg.split('\n')) {
-              if (line.startsWith('data: ')) {
-                try {
-                  const evt = JSON.parse(line.slice(6));
-                  if (evt.type === 'edit_done') {
-                    onDone(evt.scratchPath || '');
-                    return;
-                  } else if (evt.type === 'message_update') {
-                    const delta = evt.assistantMessageEvent;
-                    if (delta?.type === 'text_delta') {
-                      onChunk(delta.delta);
-                    } else if (delta?.type === 'thinking_delta') {
-                      onThinking?.(delta.delta);
-                    }
-                  } else if (evt.type === 'error') {
-                    onError?.(evt.message || evt.error || 'Unknown error');
-                  }
-                } catch {
-                  // Ignore parse errors
-                }
-              }
-            }
+        await readSse(res, (evt) => {
+          if (evt?.type === 'edit_done') {
+            scratchPath = evt.scratchPath || '';
+            done(scratchPath);
+            return;
           }
-        }
-        onDone('');
+          adapter.handle(evt);
+        });
+        done(scratchPath);
       })
       .catch((err) => {
-        if (err.name !== 'AbortError') {
-          onError?.(err.message || 'Network error');
-        }
-        onDone('');
+        if (err.name !== 'AbortError') onError?.(err.message || 'Network error');
+        done(scratchPath);
       });
     return controller;
   },
@@ -383,6 +367,23 @@ export const api = {
     onToolEnd?: (toolName: string, result: any, isError: boolean) => void,
   ): AbortController {
     const controller = new AbortController();
+    const transcript = createTranscript('__shared__');
+    let finished = false;
+    const done = () => {
+      if (finished) return;
+      finished = true;
+      onDone();
+    };
+    const adapter = new StreamAdapter({
+      onChunk,
+      onThinking,
+      onToolStart,
+      onToolEnd,
+      onError,
+      onDone: done,
+      onView: (view) => { transcript.merge(view); },
+    });
+
     fetch(`${BASE}/knowledge/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -393,54 +394,15 @@ export const api = {
         if (!res.ok) {
           const err = await res.json().catch(() => ({ error: res.statusText }));
           onError?.(err.error || `HTTP ${res.status}`);
-          onDone();
+          done();
           return;
         }
-        const reader = res.body?.getReader();
-        if (!reader) return;
-        const decoder = new TextDecoder();
-        let sseBuffer = '';
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          sseBuffer += decoder.decode(value, { stream: true });
-          const messages = sseBuffer.split('\n\n');
-          sseBuffer = messages.pop()!;
-          for (const msg of messages) {
-            for (const line of msg.split('\n')) {
-              if (line.startsWith('data: ')) {
-                try {
-                  const evt = JSON.parse(line.slice(6));
-                  if (evt.type === 'agent_end') {
-                    onDone();
-                  } else if (evt.type === 'message_update') {
-                    const delta = evt.assistantMessageEvent;
-                    if (delta?.type === 'text_delta') {
-                      onChunk(delta.delta);
-                    } else if (delta?.type === 'thinking_delta') {
-                      onThinking?.(delta.delta);
-                    }
-                  } else if (evt.type === 'tool_execution_start') {
-                    onToolStart?.(evt.toolName, evt.args);
-                  } else if (evt.type === 'tool_execution_end') {
-                    onToolEnd?.(evt.toolName, evt.result, evt.isError);
-                  } else if (evt.type === 'error') {
-                    onError?.(evt.message || evt.error || 'Unknown error');
-                  }
-                } catch {
-                  // Ignore parse errors
-                }
-              }
-            }
-          }
-        }
-        onDone();
+        await readSse(res, (evt) => adapter.handle(evt));
+        done();
       })
       .catch((err) => {
-        if (err.name !== 'AbortError') {
-          onError?.(err.message || 'Network error');
-        }
-        onDone();
+        if (err.name !== 'AbortError') onError?.(err.message || 'Network error');
+        done();
       });
     return controller;
   },
