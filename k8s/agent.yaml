@@ -29,7 +29,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: agent
-          image: ghcr.io/kahdeg-15520487/story-engine-agent:317feca
+          image: ghcr.io/kahdeg-15520487/story-engine-agent:75a7c40
           # Pinned to the Phase 2 image tag (immutable)
           imagePullPolicy: IfNotPresent
           ports:
