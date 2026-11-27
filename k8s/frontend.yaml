@@ -25,7 +25,7 @@ spec:
         runAsGroup: 1000
       containers:
         - name: frontend
-          image: ghcr.io/kahdeg-15520487/story-engine-frontend:46738ef
+          image: ghcr.io/kahdeg-15520487/story-engine-frontend:08de731
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
