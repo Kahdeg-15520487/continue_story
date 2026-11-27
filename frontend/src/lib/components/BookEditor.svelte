@@ -138,37 +138,45 @@
     width: 100%;
     height: 100%;
     overflow-y: auto;
-    padding: 32px;
+    padding: 56px 40px 96px;
+    background: var(--bg-elevated);
   }
 
   .milkdown-wrapper :global(.milkdown) {
-    max-width: 800px;
+    max-width: 720px;
     margin: 0 auto;
     color: var(--text-primary);
     caret-color: var(--text-primary);
-    font-size: 16px;
-    line-height: 1.7;
+    font-family: var(--font-serif);
+    font-size: 19px;
+    line-height: 1.8;
   }
 
   .milkdown-wrapper :global(.milkdown h1) {
-    font-size: 2em;
-    font-weight: 700;
-    margin-bottom: 16px;
+    font-size: 36px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin-bottom: 24px;
     color: var(--text-primary);
     border-bottom: 1px solid var(--border);
-    padding-bottom: 8px;
+    padding-bottom: 14px;
   }
 
   .milkdown-wrapper :global(.milkdown h2) {
-    font-size: 1.5em;
+    font-size: 27px;
     font-weight: 600;
-    margin-top: 24px;
-    margin-bottom: 12px;
+    margin-top: 36px;
+    margin-bottom: 14px;
     color: var(--text-primary);
   }
 
   .milkdown-wrapper :global(.milkdown p) {
-    margin-bottom: 16px;
+    margin-bottom: 1.05em;
+  }
+
+  .milkdown-wrapper :global(.milkdown p:empty),
+  .milkdown-wrapper :global(.milkdown p:has(> br.ProseMirror-trailingBreak:only-child)) {
+    display: none;
   }
 
   .milkdown-wrapper :global(.milkdown code) {
@@ -212,17 +220,17 @@
 
   @media (max-width: 900px) {
     .milkdown-wrapper {
-      padding: 18px 16px 32px;
+      padding: 22px 18px 48px;
     }
 
     .milkdown-wrapper :global(.milkdown) {
       max-width: none;
-      font-size: 17px;
-      line-height: 1.75;
+      font-size: 18px;
+      line-height: 1.78;
     }
 
     .milkdown-wrapper :global(.milkdown h1) {
-      font-size: 26px;
+      font-size: 30px;
     }
   }
 

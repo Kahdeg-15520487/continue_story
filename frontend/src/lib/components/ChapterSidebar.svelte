@@ -2,6 +2,7 @@
   import { api } from '$lib/api';
   import { toastError } from '$lib/toast.svelte.ts';
   import type { ChapterInfo } from '$lib/types';
+  import Icon from '$lib/components/Icon.svelte';
 
   let { slug, activeChapterId = $bindable(), collapsed = $bindable(false), onChapterSelect }: {
     slug: string;
@@ -138,7 +139,7 @@
       <span class="sidebar-title">Chapters</span>
       <span class="chapter-count">{chapters.length}</span>
       <div class="menu-wrapper">
-        <button class="icon-btn" onclick={(e) => { e.stopPropagation(); showMenu = !showMenu; }} title="More actions">⋯</button>
+        <button class="icon-btn" onclick={(e) => { e.stopPropagation(); showMenu = !showMenu; }} title="More actions"><Icon name="more" size={16} /></button>
         {#if showMenu}
           <div class="menu-dropdown" class:regenerating>
             <button class="menu-item" onclick={regenerateTitles} disabled={regenerating}>
@@ -150,7 +151,7 @@
           </div>
         {/if}
       </div>
-      <button class="icon-btn" onclick={() => collapsed = true} title="Collapse">◀</button>
+      <button class="icon-btn" onclick={() => collapsed = true} title="Collapse"><Icon name="back" size={16} /></button>
     </div>
 
     {#if loading}
@@ -186,7 +187,7 @@
               onclick={(e) => { e.stopPropagation(); removeChapter(chapter.id); }}
               onkeydown={(e) => { if (e.key === 'Enter') removeChapter(chapter.id); }}
               title="Delete chapter"
-            >×</span>
+            ><Icon name="trash" size={13} /></span>
           </button>
         {/each}
       </div>
@@ -205,7 +206,7 @@
   </div>
 {:else}
   <button class="collapsed-toggle" onclick={() => collapsed = false} title="Expand chapters">
-    ▶
+    <Icon name="chevron" size={16} />
   </button>
 {/if}
 
@@ -213,20 +214,19 @@
   .sidebar {
     display: flex;
     flex-direction: column;
-    width: 220px;
-    min-width: 220px;
+    width: 252px;
+    min-width: 252px;
     background: var(--bg-secondary);
     border-right: 1px solid var(--border);
-    overflow-y: auto;
+    overflow: hidden;
     user-select: none;
   }
 
   .sidebar-header {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 10px 12px;
-    border-bottom: 1px solid var(--border);
+    gap: 7px;
+    padding: 16px 12px 10px;
     font-size: 13px;
     font-weight: 600;
     color: var(--text-secondary);
@@ -234,28 +234,37 @@
 
   .sidebar-title {
     flex: 1;
+    font-family: var(--font-serif);
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-primary);
   }
 
   .chapter-count {
-    font-size: 11px;
-    background: var(--bg-tertiary);
-    padding: 1px 6px;
-    border-radius: 10px;
+    font-size: 10px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    padding: 2px 7px;
+    border-radius: var(--r-full);
     color: var(--text-secondary);
   }
 
   .icon-btn {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     background: none;
     border: none;
     color: var(--text-secondary);
     cursor: pointer;
-    padding: 2px 4px;
-    font-size: 12px;
-    border-radius: 3px;
+    border-radius: 7px;
   }
 
   .icon-btn:hover {
     background: var(--bg-tertiary);
+    color: var(--text-primary);
   }
 
   .menu-wrapper {
@@ -266,27 +275,27 @@
     position: absolute;
     top: 100%;
     right: 0;
-    margin-top: 4px;
-    background: var(--bg-secondary);
+    margin-top: 6px;
+    background: var(--bg-elevated);
     border: 1px solid var(--border);
-    border-radius: 6px;
-    box-shadow: 0 4px 12px rgba(60, 45, 30, 0.16);
+    border-radius: 12px;
+    box-shadow: var(--shadow-md);
     z-index: 100;
-    min-width: 160px;
-    padding: 4px;
+    min-width: 180px;
+    padding: 6px;
   }
 
   .menu-item {
     display: block;
     width: 100%;
-    padding: 6px 10px;
+    padding: 8px 10px;
     background: none;
     border: none;
     color: var(--text-primary);
-    font-size: 12px;
+    font-size: 12.5px;
     text-align: left;
     cursor: pointer;
-    border-radius: 4px;
+    border-radius: 8px;
   }
 
   .menu-item:hover:not(:disabled) {
@@ -308,21 +317,22 @@
   .chapter-list {
     flex: 1;
     overflow-y: auto;
+    padding: 0 8px 8px;
   }
 
   .chapter-filter {
-    padding: 6px 8px;
-    border-bottom: 1px solid var(--border);
+    padding: 0 12px 10px;
   }
 
   .chapter-filter input {
     width: 100%;
-    padding: 4px 8px;
-    background: var(--bg-tertiary);
+    height: 34px;
+    padding: 0 10px;
+    background: var(--bg-elevated);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: 9px;
     color: var(--text-primary);
-    font-size: 12px;
+    font-size: 12.5px;
     outline: none;
   }
 
@@ -333,17 +343,17 @@
   .chapter-item {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     width: 100%;
-    padding: 8px 12px;
+    padding: 9px 10px;
     background: none;
     border: none;
-    border-bottom: 1px solid var(--border);
+    border-radius: 9px;
     color: var(--text-primary);
     cursor: pointer;
     text-align: left;
-    font-size: 12px;
-    transition: background 0.1s;
+    font-size: 13px;
+    transition: background 0.12s, box-shadow 0.12s;
   }
 
   .chapter-item:hover {
@@ -351,16 +361,26 @@
   }
 
   .chapter-item.active {
-    background: var(--accent-soft);
-    border-left: 3px solid var(--accent);
-    padding-left: 9px;
+    background: var(--bg-elevated);
+    box-shadow: inset 2px 0 0 var(--accent);
   }
 
   .chapter-number {
-    font-size: 11px;
+    width: 22px;
+    min-width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: var(--bg-tertiary);
+    font-size: 10px;
     color: var(--text-secondary);
-    min-width: 18px;
-    text-align: right;
+  }
+
+  .chapter-item.active .chapter-number {
+    background: var(--accent);
+    color: #fff;
   }
 
   .chapter-title {
@@ -368,26 +388,27 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-weight: 500;
   }
 
   .chapter-words {
     font-size: 10px;
-    color: var(--text-secondary);
-    opacity: 0.7;
+    color: var(--text-muted);
   }
 
   .delete-btn {
-    display: inline;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
     background: none;
     border: none;
-    color: var(--error);
+    color: var(--text-muted);
     cursor: pointer;
-    padding: 0 4px;
-    font-size: 14px;
-    line-height: 1;
-    opacity: 0.3;
-    border-radius: 4px;
-    transition: opacity 0.15s;
+    opacity: 0;
+    border-radius: 6px;
+    transition: opacity 0.15s, color 0.15s;
   }
 
   .chapter-item:hover .delete-btn,
@@ -398,19 +419,20 @@
 
   .add-chapter {
     display: flex;
-    gap: 4px;
-    padding: 8px;
+    gap: 6px;
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
     border-top: 1px solid var(--border);
   }
 
   .add-chapter input {
     flex: 1;
-    padding: 4px 8px;
+    height: 34px;
+    padding: 0 10px;
     border: 1px solid var(--border);
-    border-radius: 4px;
-    background: var(--bg-tertiary);
+    border-radius: 9px;
+    background: var(--bg-elevated);
     color: var(--text-primary);
-    font-size: 12px;
+    font-size: 12.5px;
     outline: none;
   }
 
@@ -419,13 +441,18 @@
   }
 
   .add-chapter button {
-    padding: 4px 10px;
+    width: 34px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
     border: 1px solid var(--border);
-    border-radius: 4px;
-    background: var(--bg-tertiary);
-    color: var(--text-primary);
+    border-radius: 9px;
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
     cursor: pointer;
-    font-size: 14px;
+    font-size: 16px;
   }
 
   .add-chapter button:hover:not(:disabled) {
@@ -438,9 +465,15 @@
     cursor: default;
   }
 
+  @media (hover: none) {
+    .delete-btn {
+      opacity: 1;
+    }
+  }
+
   .collapsed-toggle {
-    width: 24px;
-    min-width: 24px;
+    width: 26px;
+    min-width: 26px;
     background: var(--bg-secondary);
     border-right: 1px solid var(--border);
     border-top: none;

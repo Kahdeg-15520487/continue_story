@@ -7,6 +7,7 @@
   import ChatPanel from '$lib/components/ChatPanel.svelte';
   import LorePanel from '$lib/components/LorePanel.svelte';
   import ChapterSidebar from '$lib/components/ChapterSidebar.svelte';
+  import Icon from '$lib/components/Icon.svelte';
   import InlineEditMenu from '$lib/components/InlineEditMenu.svelte';
   import DiffOverlay from '$lib/components/DiffOverlay.svelte';
   import { api } from '$lib/api';
@@ -579,39 +580,52 @@
   </div>
 {:else if book}
   <div class="book-view" use:visualViewport>
-    <div class="toolbar">
-      <a href="/" class="back-link">← Library</a>
-      {#if editingTitle}
-        <input
-          class="title-input"
-          type="text"
-          bind:value={titleInput}
-          onblur={saveTitle}
-          onkeydown={(e) => { if (e.key === 'Enter') saveTitle(); if (e.key === 'Escape') editingTitle = false; }}
-          disabled={titleSaving}
-        />
-      {:else}
-        <h2 class="book-title editable" onclick={startEditTitle} title="Click to rename">{book.title}</h2>
-      {/if}
-      <div class="toolbar-actions">
-        <button class="btn btn-edit" onclick={toggleEditing}>
-          {isEditing ? '🔒 Lock' : '✏️ Edit'}
-        </button>
-        {#if saveStatus === 'dirty'}
-          <span class="status-dirty">Unsaved changes</span>
-        {:else if saveStatus === 'saving'}
-          <span class="status-saving">Saving...</span>
-        {:else if saveStatus === 'saved'}
-          <span class="status-saved">Saved</span>
+    <header class="toolbar">
+      <a href="/" class="icon-btn" title="Back to library" aria-label="Back to library">
+        <Icon name="back" size={18} />
+      </a>
+
+      <div class="crumb">
+        <a class="crumb-home" href="/">Library</a>
+        <span class="crumb-sep"><Icon name="chevron" size={12} /></span>
+        {#if editingTitle}
+          <input
+            class="title-input"
+            type="text"
+            bind:value={titleInput}
+            onblur={saveTitle}
+            onkeydown={(e) => { if (e.key === 'Enter') saveTitle(); if (e.key === 'Escape') editingTitle = false; }}
+            disabled={titleSaving}
+          />
+        {:else}
+          <button class="book-title" onclick={startEditTitle} title="Rename book">{book.title}</button>
         {/if}
-        <button class="btn btn-wiki" class:active={showLore} onclick={() => showLore = !showLore}>
-          📖 Wiki
+      </div>
+
+      <div class="toolbar-actions">
+        {#if saveStatus === 'dirty'}
+          <span class="save-pill dirty">Unsaved</span>
+        {:else if saveStatus === 'saving'}
+          <span class="save-pill"><span class="dot"></span>Saving</span>
+        {:else if saveStatus === 'saved'}
+          <span class="save-pill"><Icon name="check" size={12} /> Saved</span>
+        {/if}
+
+        <button class="btn btn-edit" onclick={toggleEditing}>
+          {#if isEditing}
+            <Icon name="check" size={15} /> Done
+          {:else}
+            <Icon name="edit" size={15} /> Edit
+          {/if}
         </button>
-        <button class="btn btn-chat" class:active={showChat} onclick={() => showChat = !showChat}>
-          💬 Chat
+        <button class="btn icon-only btn-wiki" class:active={showLore} onclick={() => (showLore = !showLore)} title="Wiki">
+          <Icon name="wiki" size={17} />
+        </button>
+        <button class="btn icon-only btn-chat" class:active={showChat} onclick={() => (showChat = !showChat)} title="Assistant">
+          <Icon name="chat" size={17} />
         </button>
       </div>
-    </div>
+    </header>
 
     {#if interruptedTasks.length > 0}
       <div class="task-banner">
@@ -793,16 +807,16 @@
 
     <nav class="mobile-tabs" aria-label="Book sections">
       <button class:active={mobileView === 'chapters'} onclick={() => setView('chapters')}>
-        <span class="tab-icon">☰</span><span class="tab-label">Chapters</span>
+        <Icon name="menu" size={19} /><span class="tab-label">Chapters</span>
       </button>
       <button class:active={mobileView === 'write'} onclick={() => setView('write')}>
-        <span class="tab-icon">✍️</span><span class="tab-label">Write</span>
+        <Icon name="edit" size={19} /><span class="tab-label">Write</span>
       </button>
       <button class:active={mobileView === 'wiki'} onclick={() => setView('wiki')}>
-        <span class="tab-icon">📖</span><span class="tab-label">Wiki</span>
+        <Icon name="wiki" size={19} /><span class="tab-label">Wiki</span>
       </button>
       <button class:active={mobileView === 'chat'} onclick={() => setView('chat')}>
-        <span class="tab-icon">💬</span><span class="tab-label">Chat</span>
+        <Icon name="chat" size={19} /><span class="tab-label">Chat</span>
       </button>
     </nav>
   </div>
@@ -833,46 +847,90 @@
   }
 
   .toolbar {
+    flex-shrink: 0;
     display: flex;
     align-items: center;
-    gap: 16px;
-    padding: 12px 24px;
-    background: var(--bg-secondary);
+    gap: 12px;
+    height: 60px;
+    padding: 0 18px;
     border-bottom: 1px solid var(--border);
+    background: rgba(251, 247, 240, 0.86);
+    backdrop-filter: blur(14px);
+    z-index: 15;
   }
 
-  .back-link {
-    color: var(--accent);
+  .icon-btn {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    color: var(--text-secondary);
     text-decoration: none;
-    font-size: 14px;
+  }
+
+  .icon-btn:hover {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+  }
+
+  .crumb {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .crumb-home {
+    font-size: 12.5px;
+    color: var(--text-muted);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .crumb-home:hover {
+    color: var(--text-primary);
+  }
+
+  .crumb-sep {
+    display: flex;
+    color: var(--text-muted);
   }
 
   .book-title {
-    font-size: 16px;
+    font-family: var(--font-serif);
+    font-size: 19px;
     font-weight: 600;
-    flex: 1;
+    background: none;
+    border: none;
+    padding: 2px 4px;
+    margin: 0;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 48vw;
+    text-align: left;
   }
 
-  .book-title.editable {
-    cursor: pointer;
-    border-radius: 4px;
-    padding: 2px 6px;
-    margin: -2px -6px;
-  }
-
-  .book-title.editable:hover {
-    background: var(--bg-tertiary);
+  .book-title:hover {
+    background: var(--bg-secondary);
+    border-radius: 8px;
   }
 
   .title-input {
-    font-size: 16px;
+    font-family: var(--font-serif);
+    font-size: 19px;
     font-weight: 600;
-    flex: 1;
-    background: var(--bg-tertiary);
+    min-width: 160px;
+    max-width: 48vw;
+    background: var(--bg-elevated);
     border: 1px solid var(--accent);
-    border-radius: 4px;
+    border-radius: 8px;
     color: var(--text-primary);
-    padding: 2px 6px;
+    padding: 3px 8px;
   }
 
   .toolbar-actions {
@@ -881,33 +939,83 @@
     gap: 8px;
   }
 
+  .save-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 26px;
+    padding: 0 9px;
+    border-radius: var(--r-full);
+    background: var(--bg-secondary);
+    color: var(--text-muted);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .save-pill.dirty {
+    background: var(--warning-bg);
+    color: var(--warning);
+  }
+
+  .save-pill .dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    50% { opacity: 0.35; }
+  }
+
   .btn {
-    padding: 6px 14px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 36px;
+    padding: 0 13px;
     border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--bg-tertiary);
+    border-radius: var(--r-full);
+    background: var(--bg-elevated);
     color: var(--text-primary);
-    cursor: pointer;
-    font-size: 13px;
+    font-size: 12.5px;
+    font-weight: 500;
+    text-decoration: none;
+  }
+
+  .btn:hover {
+    border-color: var(--border-strong);
   }
 
   .btn.active {
+    background: var(--accent-soft);
     border-color: var(--accent);
     color: var(--accent);
-    background: var(--accent-soft);
+  }
+
+  .btn.icon-only {
+    width: 36px;
+    padding: 0;
+    justify-content: center;
   }
 
   .main-area {
     flex: 1;
     display: flex;
     overflow: hidden;
+    background: var(--bg-secondary);
   }
 
   .editor-pane {
     flex: 1;
+    min-width: 0;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
+    background: var(--bg-elevated);
   }
 
   .status-section {
@@ -915,31 +1023,17 @@
     flex-direction: column;
     align-items: center;
     gap: 16px;
-    padding: 40px 24px;
+    padding: 48px 24px;
   }
 
   .status-message {
     color: var(--text-secondary);
     font-size: 14px;
+    text-align: center;
   }
 
   .status-message.error {
     color: var(--error);
-  }
-
-  .status-saving {
-    color: var(--text-secondary);
-    font-size: 12px;
-  }
-
-  .status-dirty {
-    color: var(--warning);
-    font-size: 12px;
-  }
-
-  .status-saved {
-    color: var(--success);
-    font-size: 12px;
   }
 
   .spinner {
@@ -1154,18 +1248,30 @@
     }
 
     .toolbar {
-      flex-wrap: wrap;
-      gap: 8px;
-      padding: 8px 12px;
+      height: 54px;
+      padding: 0 8px;
+      gap: 4px;
+    }
+
+    .crumb-home,
+    .crumb-sep {
+      display: none;
+    }
+
+    .save-pill {
+      display: none;
+    }
+
+    .btn-edit {
+      height: 32px;
+      padding: 0 11px;
+      font-size: 12px;
     }
 
     .book-title {
-      font-size: 15px;
-      max-width: 100%;
+      font-size: 17px;
+      max-width: 54vw;
       min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
     }
 
     .toolbar-actions {

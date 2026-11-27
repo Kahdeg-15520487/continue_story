@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { goto } from '$app/navigation';
-  import KnowledgePanel from '$lib/components/KnowledgePanel.svelte';
+    import KnowledgePanel from '$lib/components/KnowledgePanel.svelte';
   import ChatPanel from '$lib/components/ChatPanel.svelte';
+  import Icon from '$lib/components/Icon.svelte';
   import { visualViewport } from '$lib/viewport';
 
   let chatWidth = $state(400);
@@ -36,10 +36,18 @@
 </svelte:head>
 
 <div class="knowledge-page" use:visualViewport>
-  <div class="knowledge-header">
-    <button class="back-btn" onclick={() => goto('/')}>← Library</button>
-    <h1>🧠 Shared Knowledge Base</h1>
-  </div>
+  <header class="knowledge-header">
+    <a class="back-btn" href="/" title="Back to library" aria-label="Back to library">
+      <Icon name="back" size={18} />
+    </a>
+    <div class="kh-title">
+      <span class="kh-badge"><Icon name="knowledge" size={17} /></span>
+      <div>
+        <h1>Knowledge Base</h1>
+        <p>Shared research for every book</p>
+      </div>
+    </div>
+  </header>
 
   <div class="knowledge-body" class:show-chat={mobileTab === 'assistant'}>
     <div class="kb-viewer-pane">
@@ -64,10 +72,10 @@
 
   <nav class="mobile-kb-tabs" aria-label="Knowledge sections">
     <button class:active={mobileTab === 'browse'} onclick={() => (mobileTab = 'browse')}>
-      <span class="tab-icon">📚</span><span>Browse</span>
+      <Icon name="book" size={18} /><span>Browse</span>
     </button>
     <button class:active={mobileTab === 'assistant'} onclick={() => (mobileTab = 'assistant')}>
-      <span class="tab-icon">💬</span><span>Assistant</span>
+      <Icon name="chat" size={18} /><span>Assistant</span>
     </button>
   </nav>
 </div>
@@ -85,22 +93,59 @@
   }
 
   .knowledge-header {
+    flex-shrink: 0;
     display: flex;
     align-items: center;
-    gap: 16px;
-    padding: 12px 20px;
-    background: var(--bg-secondary);
+    gap: 12px;
+    height: 64px;
+    padding: 0 18px;
+    background: rgba(251, 247, 240, 0.86);
+    backdrop-filter: blur(14px);
     border-bottom: 1px solid var(--border);
   }
 
   .back-btn {
-    padding: 4px 12px;
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border);
-    border-radius: 6px;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
     color: var(--text-secondary);
-    cursor: pointer;
-    font-size: 13px;
+    text-decoration: none;
+  }
+
+  .back-btn:hover {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+  }
+
+  .kh-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .kh-badge {
+    width: 34px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+
+  .kh-title h1 {
+    font-size: 18px;
+    line-height: 1.1;
+  }
+
+  .kh-title p {
+    font-size: 10.5px;
+    color: var(--text-muted);
+    margin-top: 1px;
   }
 
   .back-btn:hover { border-color: var(--accent); color: var(--text-primary); }

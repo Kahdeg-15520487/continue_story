@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { api } from '$lib/api';
   import { renderMarkdown } from '$lib/markdown';
+  import Icon from '$lib/components/Icon.svelte';
   import type { WikiCategory, WikiEntity } from '$lib/types';
 
   let { slug }: { slug: string } = $props();
@@ -148,17 +149,27 @@
 
 <div class="wiki-panel">
   <div class="panel-header">
-    <h3 class="panel-title">Wiki</h3>
+    <div class="panel-heading">
+      <span class="assistant-badge"><Icon name="wiki" size={15} /></span>
+      <div class="panel-title-group">
+        <h3 class="panel-title">Wiki</h3>
+        <p class="panel-sub">People, places, lore</p>
+      </div>
+    </div>
     {#if categories.length === 0 && !hasSummary}
       <button class="btn-generate" onclick={generate} disabled={generating}>
-        {generating ? 'Generating...' : 'Generate Wiki'}
+        <Icon name="sparkles" size={14} /> {generating ? 'Generating…' : 'Generate'}
       </button>
     {/if}
   </div>
 
   <div class="wiki-body">
     {#if categories.length === 0 && !hasSummary && !generating}
-      <p class="empty-hint">No wiki generated yet. Click "Generate Wiki" to analyze the book.</p>
+      <div class="empty-state">
+        <span class="empty-icon"><Icon name="wiki" size={26} /></span>
+        <p>No wiki yet</p>
+        <small>Generate a wiki to collect the people, places, and lore of this book.</small>
+      </div>
     {:else}
       <!-- Left column: entity list -->
       <div class="wiki-list">
@@ -256,24 +267,61 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 12px 16px;
+    gap: 10px;
+    padding: 13px 16px;
     border-bottom: 1px solid var(--border);
+    background: var(--bg-elevated);
+  }
+
+  .panel-heading {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .assistant-badge {
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
   }
 
   .panel-title {
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 600;
     margin: 0;
+    line-height: 1.15;
+  }
+
+  .panel-sub {
+    font-size: 10.5px;
+    color: var(--text-muted);
+    margin-top: 1px;
   }
 
   .btn-generate {
-    padding: 4px 12px;
-    font-size: 11px;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    background: var(--bg-tertiary);
-    color: var(--text-primary);
+    height: 32px;
+    padding: 0 13px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    border: none;
+    border-radius: var(--r-full);
+    background: var(--accent);
+    color: #fff;
     cursor: pointer;
+  }
+
+  .btn-generate:hover:not(:disabled) {
+    background: var(--accent-hover);
   }
 
   .btn-generate:disabled {
@@ -298,13 +346,14 @@
 
   .wiki-filter {
     width: calc(100% - 24px);
-    margin: 0 12px 8px;
-    padding: 4px 8px;
-    background: var(--bg-tertiary);
+    height: 34px;
+    margin: 0 12px 10px;
+    padding: 0 10px;
+    background: var(--bg-elevated);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: 9px;
     color: var(--text-primary);
-    font-size: 12px;
+    font-size: 12.5px;
     outline: none;
   }
 
@@ -506,4 +555,63 @@
   }
 
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  .entity-item {
+    width: calc(100% - 16px);
+    margin: 1px 8px;
+    padding: 7px 12px 7px 26px;
+    border-radius: 8px;
+    font-size: 12.5px;
+  }
+
+  .entity-item:hover {
+    background: var(--bg-tertiary);
+  }
+
+  .entity-item.active {
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+
+  .category-header {
+    padding: 10px 14px 4px;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+  }
+
+  .empty-state {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 32px 24px;
+    text-align: center;
+  }
+
+  .empty-icon {
+    width: 52px;
+    height: 52px;
+    border-radius: 16px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 4px;
+  }
+
+  .empty-state p {
+    font-family: var(--font-serif);
+    font-size: 18px;
+    color: var(--text-primary);
+  }
+
+  .empty-state small {
+    max-width: 280px;
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+  }
 </style>

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { api } from '$lib/api';
+  import Icon from '$lib/components/Icon.svelte';
 
   type ModelInfo = { id: string; name?: string; contextWindow?: number; maxTokens?: number };
   type Provider = {
@@ -168,7 +169,9 @@
 
 <div class="settings-page">
   <header class="settings-header">
-    <a href="/" class="back-link">← Library</a>
+    <a href="/" class="back-link" title="Back to library" aria-label="Back to library">
+      <Icon name="back" size={18} />
+    </a>
     <h1>Settings</h1>
     <a href="/knowledge" class="ghost-link">Knowledge Base</a>
   </header>
@@ -676,5 +679,53 @@
     .section-head .btn {
       width: 100%;
     }
+  }
+
+  .settings-header {
+    height: 64px;
+    padding: 0 20px;
+    gap: 12px;
+    background: rgba(251, 247, 240, 0.86);
+    backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .settings-header h1 {
+    font-size: 22px;
+  }
+
+  .back-link {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    color: var(--text-secondary);
+    text-decoration: none;
+  }
+
+  .back-link:hover {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+  }
+
+  .ghost-link {
+    margin-left: auto;
+    height: 34px;
+    padding: 0 14px;
+    display: flex;
+    align-items: center;
+    border: 1px solid var(--border);
+    border-radius: var(--r-full);
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 12.5px;
+    font-weight: 500;
+  }
+
+  .ghost-link:hover {
+    color: var(--text-primary);
+    border-color: var(--border-strong);
   }
 </style>

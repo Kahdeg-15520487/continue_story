@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import Icon from '$lib/components/Icon.svelte';
   import { api } from '$lib/api';
   import { renderMarkdown } from '$lib/markdown';
   import { describeToolActivity } from '$lib/tool-labels';
@@ -382,14 +383,20 @@
 
 <div class="chat-panel">
   <div class="panel-header">
-    <h3 class="panel-title">AI Chat</h3>
+    <div class="panel-heading">
+      <span class="assistant-badge"><Icon name="sparkles" size={15} /></span>
+      <div class="panel-title-group">
+        <h3 class="panel-title">{mode === 'knowledge' ? 'Research assistant' : 'Assistant'}</h3>
+        <p class="panel-sub">{mode === 'knowledge' ? 'Shared knowledge base' : 'Ask about this book'}</p>
+      </div>
+    </div>
     <div class="session-controls">
-      <button class="btn-new-session" title="New session" onclick={startNewSession}>+</button>
+      <button class="icon-btn" title="New session" onclick={startNewSession}><Icon name="plus" size={16} /></button>
       {#if messages.length > 0}
-        <button class="btn-clear-history" onclick={clearHistory} title="Clear chat history">Clear</button>
+        <button class="icon-btn" onclick={clearHistory} title="Clear chat history"><Icon name="trash" size={15} /></button>
       {/if}
       {#if onClose}
-        <button class="btn-close" title="Close chat" aria-label="Close chat" onclick={onClose}>✕</button>
+        <button class="icon-btn" title="Close chat" aria-label="Close chat" onclick={onClose}><Icon name="close" size={16} /></button>
       {/if}
     </div>
   </div>
@@ -416,7 +423,7 @@
         {#if msg.role === 'assistant'}
           <div class="message-text markdown">{@html renderMarkdown(msg.text)}</div>
           <button class="copy-btn" onclick={() => copyMessage(msg.text)} title="Copy message">
-            {copiedText === msg.text ? '✓ Copied' : '📋'}
+            {copiedText === msg.text ? 'Copied' : 'Copy'}
           </button>
         {:else}
           <div class="message-text">{msg.text}</div>
@@ -492,13 +499,17 @@
       rows="4"
     ></textarea>
     <div class="input-actions">
-      <button type="submit" class="btn" disabled={streaming || !input.trim()}>
-        Send
+      <button type="submit" class="btn btn-send" disabled={streaming || !input.trim()}>
+        <Icon name="send" size={16} /> Send
       </button>
       {#if streaming}
-        <button type="button" class="btn btn-stop" onclick={stop} title="Stops the response and resets the conversation context">⏹ Stop</button>
+        <button type="button" class="btn btn-stop" onclick={stop} title="Stops the response and resets the conversation context">
+          <Icon name="close" size={14} /> Stop
+        </button>
       {:else if mode === 'book' && messages.length > 0}
-        <button type="button" class="btn btn-retry" onclick={retry}>↻ Retry</button>
+        <button type="button" class="btn btn-retry" onclick={retry}>
+          <Icon name="refresh" size={14} /> Retry
+        </button>
       {/if}
     </div>
   </form>
@@ -506,22 +517,24 @@
 
 <style>
   .chat-panel { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-  .panel-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border); }
-  .panel-title { font-size: 14px; font-weight: 600; }
-  .session-controls { display: flex; gap: 6px; align-items: center; }
-  .btn-new-session { width: 26px; height: 26px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-tertiary); color: var(--text-secondary); font-size: 16px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.15s; line-height: 1; }
-  .btn-new-session:hover { background: var(--bg-hover); color: var(--text-primary); }
-  .btn-clear-history { background: none; border: 1px solid var(--border); color: var(--text-secondary); font-size: 11px; padding: 2px 8px; border-radius: 4px; cursor: pointer; }
-  .btn-clear-history:hover { color: var(--error); border-color: var(--error); }
-  .messages { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 12px; }
-  .empty-hint { color: var(--text-secondary); font-size: 13px; text-align: center; padding-top: 24px; }
-  .message { padding: 8px 12px; border-radius: 8px; font-size: 13px; line-height: 1.5; }
-  .message.user { background: var(--bg-tertiary); margin-left: 32px; }
-  .message.assistant { background: var(--bg-secondary); margin-right: 32px; }
-  .message-role { font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px; text-transform: uppercase; }
-  .message-time { font-weight: 400; opacity: 0.6; margin-left: 6px; font-size: 10px; text-transform: none; }
-  .copy-btn { margin-top: 4px; background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 11px; padding: 2px 4px; border-radius: 4px; }
-  .copy-btn:hover { color: var(--text-primary); background: var(--bg-tertiary); }
+  .panel-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 13px 16px; border-bottom: 1px solid var(--border); background: var(--bg-elevated); }
+  .panel-heading { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .assistant-badge { width: 32px; height: 32px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .panel-title { font-size: 15px; line-height: 1.15; }
+  .panel-sub { font-size: 10.5px; color: var(--text-muted); margin-top: 1px; }
+  .session-controls { display: flex; gap: 4px; align-items: center; }
+  .icon-btn { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border: none; background: transparent; color: var(--text-secondary); border-radius: 8px; }
+  .icon-btn:hover { background: var(--bg-secondary); color: var(--text-primary); }
+  .messages { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 16px 8px; display: flex; flex-direction: column; gap: 14px; }
+  .empty-hint { color: var(--text-muted); font-size: 13px; text-align: center; padding-top: 28px; }
+  .message { font-size: 14px; line-height: 1.65; }
+  .message.user { align-self: flex-end; max-width: 88%; background: var(--accent-soft); border-radius: 16px 16px 4px 16px; padding: 10px 14px; }
+  .message.assistant { align-self: stretch; max-width: 100%; background: transparent; padding: 0; }
+  .message-role { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 5px; text-transform: uppercase; }
+  .message.user .message-role { color: var(--accent); }
+  .message-time { font-weight: 400; opacity: 0.7; margin-left: 6px; font-size: 9.5px; letter-spacing: 0; text-transform: none; }
+  .copy-btn { margin-top: 6px; background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 10.5px; padding: 2px 0; }
+  .copy-btn:hover { color: var(--accent); }
   .message-text { white-space: pre-wrap; word-break: break-word; }
   .thinking-section { margin-top: 4px; }
   .thinking-summary { display: flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 12px; cursor: pointer; }
@@ -553,24 +566,18 @@
   .message-text.markdown :global(strong) { font-weight: 600; }
   .message-text.markdown :global(a) { color: var(--accent); text-decoration: underline; }
   .message-text.markdown :global(hr) { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
-  .input-form { flex-shrink: 0; display: flex; align-items: flex-end; gap: 8px; padding: 14px 16px; border-top: 1px solid var(--border); }
-  .input-form textarea { flex: 1; min-height: 112px; padding: 12px 14px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 8px; color: var(--text-primary); font-size: 15px; line-height: 1.5; resize: none; font-family: inherit; }
-  .btn { min-height: 44px; padding: 10px 18px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-tertiary); color: var(--text-primary); cursor: pointer; font-size: 14px; }
+  .input-form { flex-shrink: 0; display: flex; align-items: flex-end; gap: 10px; padding: 14px 16px calc(14px + env(safe-area-inset-bottom)); border-top: 1px solid var(--border); background: var(--bg-elevated); }
+  .input-form textarea { flex: 1; min-height: 104px; padding: 12px 14px; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 14px; color: var(--text-primary); font-size: 15px; line-height: 1.55; resize: none; font-family: inherit; }
+  .input-form textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 0 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-elevated); color: var(--text-primary); cursor: pointer; font-size: 13.5px; font-weight: 500; }
+  .btn-send { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn-send:hover:not(:disabled) { background: var(--accent-hover); }
   .btn-stop { border-color: var(--error); color: var(--error); }
   .btn-stop:hover { background: var(--error-bg); }
   .btn-retry { color: var(--text-secondary); }
   .btn-retry:hover { color: var(--accent); border-color: var(--accent); }
-  .input-actions { display: flex; flex-shrink: 0; gap: 8px; }
-  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-
-  .btn-close { width: 26px; height: 26px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-tertiary); color: var(--text-secondary); cursor: pointer; font-size: 13px; line-height: 1; display: flex; align-items: center; justify-content: center; }
-  .btn-close:hover { color: var(--text-primary); border-color: var(--accent); }
-
-  @media (max-width: 900px) {
-    .input-form {
-      padding-bottom: calc(12px + env(safe-area-inset-bottom));
-    }
-  }
+  .input-actions { display: flex; flex-shrink: 0; gap: 6px; }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
   @media (max-width: 600px) {
     .input-form {

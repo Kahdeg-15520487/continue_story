@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import BookList from '$lib/components/BookList.svelte';
+  import Icon from '$lib/components/Icon.svelte';
   import { visualViewport } from '$lib/viewport';
   import { api } from '$lib/api';
   import { toastError } from '$lib/toast.svelte.ts';
@@ -111,430 +112,518 @@
 
 <svelte:window
   ondragover={(e) => { e.preventDefault(); dragging = true; }}
-  ondragleave={() => { dragging = false; }}
+  ondragleave={(e) => { if (!e.relatedTarget) dragging = false; }}
+  ondrop={handleDrop}
 />
 
-<div class="library-page" use:visualViewport>
-  <aside class="sidebar">
-    <div class="sidebar-header">
-      <h1>Library</h1>
-      <button class="new-book-btn" onclick={() => showNewBookPrompt = !showNewBookPrompt}>+ Empty Book</button>
-    </div>
-    {#if showNewBookPrompt}
-      <div class="new-book-form">
-        <input
-          type="text"
-          placeholder="Book title..."
-          bind:value={newBookTitle}
-          autofocus
-          onkeydown={(e) => {
-            if (e.key === 'Enter') createEmptyBook();
-            if (e.key === 'Escape') { showNewBookPrompt = false; newBookTitle = ''; }
-          }}
-        />
-        <button onclick={createEmptyBook} disabled={creatingEmpty || !newBookTitle.trim()}>Create</button>
-        <button onclick={() => { showNewBookPrompt = false; newBookTitle = ''; }} title="Cancel">✕</button>
-      </div>
-    {/if}
-    <a href="/knowledge" class="kb-link">🧠 Knowledge Base</a>
-    <a href="/settings" class="kb-link">⚙️ Settings</a>
+<div class="shell" use:visualViewport>
+  <header class="topbar">
+    <a class="brand" href="/">
+      <span class="brand-icon"><Icon name="book" size={21} /></span>
+      <span class="brand-text">
+        <strong>Story Engine</strong>
+        <small>writing studio</small>
+      </span>
+    </a>
 
-    {#if loading}
-      <p class="loading">Loading...</p>
-    {:else if loadError}
-      <div class="sidebar-error">
-        <p>{loadError}</p>
-        <button class="retry-btn" onclick={loadBooks}>Retry</button>
-      </div>
-    {:else}
-      <BookList {books} />
-    {/if}
-  </aside>
+    <nav class="nav">
+      <a class="nav-link" href="/knowledge" title="Knowledge base">
+        <Icon name="knowledge" size={18} /><span>Knowledge</span>
+      </a>
+      <a class="nav-link" href="/settings" title="Settings">
+        <Icon name="settings" size={18} /><span>Settings</span>
+      </a>
+      <label class="nav-link primary" title="Import a manuscript">
+        <Icon name="plus" size={18} /><span>New book</span>
+        <input type="file" accept={ACCEPTED} onchange={handleFileInput} />
+      </label>
+    </nav>
+  </header>
 
-  <main class="main-content">
-    <div
-      class="drop-zone"
-      class:dragging
-      class:uploading
-      ondrop={handleDrop}
-      ondragover={(e: DragEvent) => { e.preventDefault(); e.stopPropagation(); dragging = true; }}
-      ondragleave={() => { dragging = false; }}
-    >
-      {#if uploading}
-        <div class="upload-progress">
-          <div class="spinner"></div>
-          <p class="progress-label">Uploading... {uploadProgress}%</p>
-          <div class="progress-bar">
-            <div class="progress-fill" style="width: {uploadProgress}%"></div>
-          </div>
+  <main class="main">
+    <div class="inner">
+      <section class="intro">
+        <div>
+          <p class="eyebrow">Library</p>
+          <h1>Your books</h1>
+          <p class="lede">
+            {books.length
+              ? `${books.length} manuscript${books.length === 1 ? '' : 's'} in your studio`
+              : 'Start your first manuscript'}
+          </p>
         </div>
-      {:else}
-        <div class="drop-content">
-          <div class="drop-icon">📚</div>
-          <h2>{books.length === 0 ? 'Drop a file to create a book' : 'Drop a file to add a new book'}</h2>
-          <p class="drop-formats">EPUB, PDF, DOCX, TXT, HTML, MD, and more</p>
-          <label class="browse-btn">
-            or browse files
-            <input type="file" accept={ACCEPTED} onchange={handleFileInput} />
-          </label>
+        <button class="btn-primary" onclick={() => (showNewBookPrompt = !showNewBookPrompt)}>
+          <Icon name="plus" size={17} /> Empty book
+        </button>
+      </section>
+
+      {#if showNewBookPrompt}
+        <form
+          class="new-book"
+          onsubmit={(e) => { e.preventDefault(); createEmptyBook(); }}
+        >
+          <input
+            type="text"
+            placeholder="Give the manuscript a title…"
+            bind:value={newBookTitle}
+            autofocus
+            onkeydown={(e) => { if (e.key === 'Escape') { showNewBookPrompt = false; newBookTitle = ''; } }}
+          />
+          <button class="btn-primary" type="submit" disabled={creatingEmpty || !newBookTitle.trim()}>
+            Create
+          </button>
+          <button
+            class="btn-ghost"
+            type="button"
+            title="Cancel"
+            onclick={() => { showNewBookPrompt = false; newBookTitle = ''; }}
+          >
+            <Icon name="close" size={16} />
+          </button>
+        </form>
+      {/if}
+
+      {#if uploading}
+        <div class="uploading">
+          <div class="spinner"></div>
+          <div class="uploading-body">
+            <strong>Importing manuscript</strong>
+            <div class="progress"><i style="width: {uploadProgress}%"></i></div>
+          </div>
+          <span class="uploading-pct">{uploadProgress}%</span>
         </div>
       {/if}
 
       {#if uploadError}
-        <div class="upload-error">{uploadError}</div>
+        <p class="error-banner">{uploadError}</p>
+      {/if}
+
+      {#if loading}
+        <div class="grid skeleton-grid">
+          {#each Array(6) as _}
+            <div class="skeleton"></div>
+          {/each}
+        </div>
+      {:else if loadError}
+        <div class="empty-state">
+          <p>{loadError}</p>
+          <button class="btn-primary" onclick={loadBooks}>Try again</button>
+        </div>
+      {:else}
+        <BookList {books} onImport={uploadFile} />
       {/if}
     </div>
   </main>
 
-  <label class="mobile-add" title="Add a book">
-    ＋
-    <input type="file" accept={ACCEPTED} onchange={handleFileInput} />
-  </label>
+  {#if dragging}
+    <div class="drop-overlay">
+      <div class="drop-card">
+        <Icon name="upload" size={40} />
+        <h2>Drop to import</h2>
+        <p>EPUB · PDF · DOCX · TXT · MD</p>
+      </div>
+    </div>
+  {/if}
 </div>
 
 <style>
-  .library-page {
-    display: flex;
-    width: 100%;
-    height: 100vh;
-  }
-
-  .mobile-add {
-    display: none;
-  }
-
-  .sidebar {
-    width: 280px;
-    min-width: 280px;
-    background: var(--bg-secondary);
-    border-right: 1px solid var(--border);
+  .shell {
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    width: 100%;
+    height: 100vh;
+    height: var(--vvh, 100dvh);
   }
 
-  .sidebar-header {
-    padding: 16px;
-    border-bottom: 1px solid var(--border);
+  .topbar {
+    flex-shrink: 0;
+    height: var(--appbar-h);
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 16px;
+    padding: 0 26px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(251, 247, 240, 0.82);
+    backdrop-filter: blur(14px);
+    z-index: 20;
   }
 
-  .sidebar-header h1 {
-    font-size: 18px;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  .new-book-btn {
-    padding: 4px 12px;
-    font-size: 12px;
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: border-color 0.2s, color 0.2s;
-  }
-
-  .new-book-btn:hover {
-    border-color: var(--accent);
-    color: var(--text-primary);
-  }
-
-  .kb-link {
-    display: block;
-    padding: 10px 16px;
-    color: var(--text-secondary);
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 11px;
     text-decoration: none;
-    font-size: 13px;
-    border-bottom: 1px solid var(--border);
-    transition: color 0.2s, background 0.2s;
-  }
-
-  .new-book-form {
-    display: flex;
-    gap: 4px;
-    padding: 8px 12px;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .new-book-form input {
-    flex: 1;
     min-width: 0;
-    padding: 4px 8px;
-    background: var(--bg-tertiary);
-    border: 1px solid var(--accent);
-    border-radius: 4px;
-    color: var(--text-primary);
-    font-size: 12px;
-    outline: none;
   }
 
-  .new-book-form button {
-    padding: 4px 8px;
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    color: var(--text-secondary);
-    font-size: 11px;
-    cursor: pointer;
-  }
-
-  .new-book-form button:hover:not(:disabled) {
-    border-color: var(--accent);
-    color: var(--text-primary);
-  }
-
-  .new-book-form button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .kb-link:hover {
-    color: var(--text-primary);
-    background: var(--bg-tertiary);
-  }
-
-  .loading {
-    padding: 16px;
-    color: var(--text-secondary);
-  }
-
-  .sidebar-error {
-    padding: 16px;
-    color: var(--error);
-    font-size: 13px;
+  .brand-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
+    align-items: center;
+    justify-content: center;
+    background: var(--accent);
+    color: #fff;
+    box-shadow: var(--shadow-sm);
+    flex-shrink: 0;
+  }
+
+  .brand-text strong {
+    display: block;
+    font-family: var(--font-serif);
+    font-size: 17px;
+    line-height: 1.1;
+  }
+
+  .brand-text small {
+    display: block;
+    font-size: 9.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+
+  .nav {
+    display: flex;
+    align-items: center;
     gap: 8px;
   }
 
-  .retry-btn {
-    padding: 4px 12px;
-    font-size: 12px;
-    background: var(--bg-tertiary);
+  .nav-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 38px;
+    padding: 0 15px;
+    border-radius: var(--r-full);
     border: 1px solid var(--border);
-    border-radius: 6px;
-    color: var(--text-primary);
-    cursor: pointer;
-  }
-
-  .retry-btn:hover {
-    border-color: var(--accent);
-  }
-
-  .main-content {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .drop-zone {
-    flex: 1;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: 3px dashed var(--border);
-    border-radius: 16px;
-    margin: 32px;
-    transition: border-color 0.2s, background-color 0.2s;
-    position: relative;
-  }
-
-  .drop-zone.dragging {
-    border-color: var(--accent);
-    background: rgba(99, 102, 241, 0.08);
-  }
-
-  .drop-zone.uploading {
-    border-color: var(--accent);
-  }
-
-  .drop-content {
-    text-align: center;
+    background: var(--bg-elevated);
     color: var(--text-secondary);
-  }
-
-  .drop-icon {
-    font-size: 48px;
-    margin-bottom: 16px;
-    opacity: 0.6;
-  }
-
-  .drop-zone h2 {
-    font-size: 20px;
-    color: var(--text-primary);
-    margin-bottom: 8px;
+    text-decoration: none;
+    font-size: 13px;
     font-weight: 500;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+    white-space: nowrap;
   }
 
-  .drop-formats {
-    font-size: 13px;
-    margin-bottom: 16px;
-  }
-
-  .browse-btn {
-    display: inline-block;
-    padding: 8px 20px;
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    color: var(--text-secondary);
-    font-size: 13px;
-    cursor: pointer;
-    position: relative;
-    transition: border-color 0.2s, color 0.2s;
-  }
-
-  .browse-btn:hover {
-    border-color: var(--accent);
+  .nav-link:hover {
     color: var(--text-primary);
+    border-color: var(--border-strong);
   }
 
-  .browse-btn input[type="file"] {
-    position: absolute;
-    inset: 0;
-    opacity: 0;
-    cursor: pointer;
+  .nav-link.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
   }
 
-  .upload-progress {
-    text-align: center;
-    width: 300px;
+  .nav-link.primary:hover {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+    color: #fff;
+  }
+
+  .nav-link input {
+    display: none;
+  }
+
+  .main {
+    flex: 1;
+    overflow-y: auto;
+  }
+
+  .inner {
+    max-width: var(--page-max);
+    margin: 0 auto;
+    padding: 44px 26px 96px;
+  }
+
+  .intro {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 18px;
+    margin-bottom: 30px;
+  }
+
+  .eyebrow {
+    font-size: 10.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+
+  .intro h1 {
+    font-size: clamp(34px, 5vw, 46px);
+    line-height: 1.02;
+  }
+
+  .lede {
+    margin-top: 9px;
+    color: var(--text-secondary);
+    font-size: 14px;
+  }
+
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 42px;
+    padding: 0 18px;
+    border: none;
+    border-radius: var(--r-full);
+    background: var(--accent);
+    color: #fff;
+    font-size: 13.5px;
+    font-weight: 600;
+    box-shadow: var(--shadow-sm);
+    transition: background 0.15s, transform 0.12s;
+    white-space: nowrap;
+  }
+
+  .btn-primary:hover {
+    background: var(--accent-hover);
+  }
+
+  .btn-primary:active {
+    transform: translateY(1px);
+  }
+
+  .btn-primary:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-full);
+    background: transparent;
+    color: var(--text-secondary);
+  }
+
+  .btn-ghost:hover {
+    color: var(--text-primary);
+    border-color: var(--border-strong);
+  }
+
+  .new-book {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px;
+    margin-bottom: 22px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    background: var(--bg-elevated);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .new-book input {
+    flex: 1;
+    min-width: 0;
+    height: 42px;
+    padding: 0 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    background: var(--bg-primary);
+    font-size: 15px;
+  }
+
+  .new-book input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+
+  .uploading {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 18px;
+    margin-bottom: 20px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    background: var(--bg-elevated);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .uploading-body {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .uploading-body strong {
+    display: block;
+    font-size: 13.5px;
+    margin-bottom: 8px;
+  }
+
+  .uploading-pct {
+    font-size: 13px;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .progress {
+    height: 6px;
+    border-radius: var(--r-full);
+    background: var(--bg-tertiary);
+    overflow: hidden;
+  }
+
+  .progress i {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--accent);
+    transition: width 0.2s;
   }
 
   .spinner {
-    width: 32px;
-    height: 32px;
-    border: 3px solid var(--border);
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--border);
     border-top-color: var(--accent);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
-    margin: 0 auto 16px;
+    flex-shrink: 0;
   }
 
   @keyframes spin {
     to { transform: rotate(360deg); }
   }
 
-  .progress-label {
-    font-size: 14px;
-    color: var(--text-primary);
-    margin-bottom: 12px;
-  }
-
-  .progress-bar {
-    height: 6px;
-    background: var(--bg-tertiary);
-    border-radius: 3px;
-    overflow: hidden;
-  }
-
-  .progress-fill {
-    height: 100%;
-    background: var(--accent);
-    border-radius: 3px;
-    transition: width 0.3s ease;
-  }
-
-  .upload-error {
-    position: absolute;
-    bottom: 24px;
-    left: 50%;
-    transform: translateX(-50%);
-    padding: 8px 16px;
+  .error-banner {
+    padding: 12px 16px;
+    margin-bottom: 18px;
+    border-radius: var(--r-md);
     background: var(--error-bg);
     color: var(--error);
-    border-radius: 8px;
     font-size: 13px;
-    max-width: min(600px, 90vw);
-    text-align: center;
-    overflow-wrap: anywhere;
   }
 
-  @media (max-width: 760px) {
-    .library-page {
-      flex-direction: column;
-      height: 100dvh;
-      height: var(--vvh, 100dvh);
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    padding: 60px 20px;
+    color: var(--text-secondary);
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(228px, 1fr));
+    gap: 20px;
+  }
+
+  .skeleton-grid {
+    opacity: 0.7;
+  }
+
+  .skeleton {
+    height: 250px;
+    border-radius: var(--r-lg);
+    background: linear-gradient(100deg, var(--bg-secondary) 30%, var(--bg-tertiary) 50%, var(--bg-secondary) 70%);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s infinite;
+  }
+
+  @keyframes shimmer {
+    to { background-position: -200% 0; }
+  }
+
+  .drop-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(60, 45, 30, 0.3);
+    backdrop-filter: blur(6px);
+  }
+
+  .drop-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    width: min(420px, 100%);
+    padding: 48px 28px;
+    border: 2px dashed var(--border-strong);
+    border-radius: var(--r-xl);
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .drop-card h2 {
+    font-size: 24px;
+    color: var(--text-primary);
+  }
+
+  .drop-card p {
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  @media (max-width: 720px) {
+    .topbar {
+      height: 58px;
+      padding: 0 14px;
     }
 
-    .sidebar {
-      width: 100%;
-      min-width: 0;
-      max-height: none;
-      flex: 1;
-      border-right: none;
-      border-bottom: none;
-    }
-
-    .sidebar-header {
-      padding: 14px 16px;
-    }
-
-    .sidebar-header h1 {
-      font-size: 22px;
-    }
-
-    .new-book-btn {
-      min-height: 40px;
-      padding: 8px 14px;
-      font-size: 13px;
-    }
-
-    .kb-link {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 14px 16px;
-      font-size: 15px;
-    }
-
-    .kb-link::after {
-      content: '›';
-      opacity: 0.45;
-      font-size: 18px;
-    }
-
-    .new-book-form {
-      padding: 0 16px 12px;
-    }
-
-    .new-book-form input {
-      min-height: 44px;
-      font-size: 16px;
-    }
-
-    .main-content {
-      display: none;
-    }
-
-    .mobile-add {
-      display: flex;
-      position: fixed;
-      right: 18px;
-      bottom: calc(18px + env(safe-area-inset-bottom));
-      z-index: 20;
-      width: 56px;
-      height: 56px;
-      align-items: center;
-      justify-content: center;
+    .nav-link {
+      width: 42px;
+      height: 42px;
+      padding: 0;
       border-radius: 50%;
-      background: var(--accent);
-      color: #fff;
-      font-size: 28px;
-      line-height: 1;
-      box-shadow: 0 6px 20px rgba(60, 45, 30, 0.18);
-      cursor: pointer;
     }
 
-    .mobile-add input {
+    .nav-link span {
       display: none;
+    }
+
+    .brand-text small {
+      display: none;
+    }
+
+    .inner {
+      padding: 26px 16px 96px;
+    }
+
+    .intro {
+      align-items: flex-start;
+      flex-direction: column;
+      gap: 14px;
+      margin-bottom: 22px;
+    }
+
+    .intro h1 {
+      font-size: 34px;
+    }
+
+    .new-book {
+      flex-wrap: wrap;
+      padding: 12px;
+    }
+
+    .new-book input {
+      flex-basis: 100%;
     }
   }
 </style>

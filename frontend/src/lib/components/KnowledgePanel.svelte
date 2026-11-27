@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import Icon from '$lib/components/Icon.svelte';
   import { api } from '$lib/api';
   import { toastError } from '$lib/toast.svelte.ts';
   import { renderMarkdown } from '$lib/markdown';
@@ -188,10 +189,10 @@
 <div class="knowledge-panel">
   <div class="kb-sidebar">
     <div class="kb-sidebar-header">
-      <h3>Knowledge Base</h3>
+      <h3>Entries</h3>
       <div class="kb-actions">
-        <button onclick={() => showNewEntry = !showNewEntry} title="New entry" disabled={!selectedCategory}>📄+</button>
-        <button onclick={loadIndex} title="Refresh">🔄</button>
+        <button onclick={() => showNewEntry = !showNewEntry} title="New entry" disabled={!selectedCategory}><Icon name="plus" size={15} /></button>
+        <button onclick={loadIndex} title="Refresh"><Icon name="refresh" size={15} /></button>
       </div>
     </div>
 
@@ -701,6 +702,74 @@
     .kb-content {
       flex: 1;
       min-height: 0;
+    }
+  }
+
+  .kb-sidebar-header h3 {
+    font-family: var(--font-serif);
+    font-size: 16px;
+    color: var(--text-primary);
+  }
+
+  .kb-actions button {
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+
+  .kb-actions button:hover:not(:disabled) {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+  }
+
+  .kb-actions button:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+
+  .kb-placeholder {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32px;
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  .kb-search input {
+    height: 38px;
+    border-radius: 9px;
+    background: var(--bg-elevated);
+    font-size: 13px;
+  }
+
+  .kb-entry {
+    border-radius: 8px;
+    margin: 1px 6px;
+  }
+
+  .kb-entry:hover {
+    background: var(--bg-tertiary);
+  }
+
+  .kb-entry.active {
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+
+  @media (max-width: 860px) {
+    .kb-category:has(.kb-empty-cat) {
+      display: none;
     }
   }
 </style>
