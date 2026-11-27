@@ -1,5 +1,7 @@
 import type { BookSummary, BookDetail, BookContent, CreateBookRequest, WikiIndex, UploadResult, ConversionStatus, ChatHistoryMessage } from './types';
 import { createTranscript } from './transcript';
+import type { TranscriptView } from './transcript';
+import type { ConversationTranscript } from '@earendil-works/pi-durable';
 import { StreamAdapter } from './stream';
 
 const BASE = '/api';
@@ -198,10 +200,10 @@ export const api = {
     onThinking?: (text: string) => void,
     onToolStart?: (toolName: string, args: any) => void,
     onToolEnd?: (toolName: string, result: any, isError: boolean) => void,
-    options?: { activeChapterId?: string | null; sessionId?: string | null; onEditDone?: (chapterId: string) => void; onSessionInfo?: (sessionId: string) => void },
+    options?: { activeChapterId?: string | null; sessionId?: string | null; onEditDone?: (chapterId: string) => void; onSessionInfo?: (sessionId: string) => void; transcript?: ConversationTranscript; onTranscript?: (view: TranscriptView) => void; onLive?: (live: any) => void },
   ): AbortController {
     const controller = new AbortController();
-    const transcript = createTranscript(bookSlug);
+    const transcript = options?.transcript ?? createTranscript(bookSlug);
     let finished = false;
     const done = () => {
       if (finished) return;
@@ -217,7 +219,11 @@ export const api = {
       onEditDone: options?.onEditDone,
       onError,
       onDone: done,
-      onView: (view) => { transcript.merge(view); },
+      onView: (view) => {
+        const merged = transcript.merge(view);
+        options?.onTranscript?.(merged);
+        options?.onLive?.(view.docs?.['pi.live'] ?? null);
+      },
     });
 
     fetch(`${BASE}/chat`, {
@@ -365,9 +371,10 @@ export const api = {
     onThinking?: (text: string) => void,
     onToolStart?: (toolName: string, args: any) => void,
     onToolEnd?: (toolName: string, result: any, isError: boolean) => void,
+    options?: { transcript?: ConversationTranscript; onTranscript?: (view: TranscriptView) => void; onLive?: (live: any) => void },
   ): AbortController {
     const controller = new AbortController();
-    const transcript = createTranscript('__shared__');
+    const transcript = options?.transcript ?? createTranscript('__shared__');
     let finished = false;
     const done = () => {
       if (finished) return;
@@ -381,7 +388,11 @@ export const api = {
       onToolEnd,
       onError,
       onDone: done,
-      onView: (view) => { transcript.merge(view); },
+      onView: (view) => {
+        const merged = transcript.merge(view);
+        options?.onTranscript?.(merged);
+        options?.onLive?.(view.docs?.['pi.live'] ?? null);
+      },
     });
 
     fetch(`${BASE}/knowledge/chat`, {

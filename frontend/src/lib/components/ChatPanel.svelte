@@ -4,6 +4,9 @@
   import { api } from '$lib/api';
   import { renderMarkdown } from '$lib/markdown';
   import { describeToolActivity } from '$lib/tool-labels';
+  import { createTranscript } from '$lib/transcript';
+  import type { TranscriptView } from '$lib/transcript';
+  import type { ConversationTranscript } from '@earendil-works/pi-durable';
 
   let {
     slug,
@@ -21,34 +24,25 @@
     onClose?: () => void;
   } = $props();
 
-  let messages: Array<{ role: 'user' | 'assistant'; text: string; thinking?: string; createdAt?: number }> = $state([]);
-  let input = $state('');
+  const transcriptSlug = mode === 'knowledge' ? '__shared__' : slug;
+  let transcript: ConversationTranscript = createTranscript(transcriptSlug);
+
+  let view = $state<TranscriptView | null>(null);
+  let live = $state<any>(null);
+  let pendingUser = $state('');
+  let loaded = $state(false);
   let streaming = $state(false);
-  let currentResponse = $state('');
-  let thinkingText = $state('');
+  let input = $state('');
   let chatError = $state('');
   let chatContainer: HTMLDivElement;
   let stickToBottom = true;
-  let currentSessionId = $state<string | null>(null);
   let abortController: AbortController | null = null;
-  let activeTools = $state<Array<{ name: string; args: any; id: number }>>([]);
-  let completedTools = $state<Array<{ name: string; args: any; result?: string; isError: boolean; id: number }>>([]);
-  let toolIdCounter = 0;
-
-  // Debounce the markdown re-render of the streaming response
-  let displayResponse = $state('');
-  let renderTimer: ReturnType<typeof setTimeout> | null = null;
-
-  $effect(() => {
-    const raw = currentResponse;
-    if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
-    if (!raw) { displayResponse = ''; return; }
-    renderTimer = setTimeout(() => { displayResponse = raw; }, 120);
-  });
+  let currentSessionId = $state<string | null>(null);
 
   let copiedText = $state<string | null>(null);
+  let copyTimer: ReturnType<typeof setTimeout> | null = null;
+  let textareaEl: HTMLTextAreaElement | null = null;
 
-  // Model picker (per conversation) — options come from the LLM settings.
   let llmSettings = $state<any>(null);
   let selectedModel = $state('');
   let modelSaving = $state(false);
@@ -75,8 +69,106 @@
           { k: '🪄', t: 'Critique the chapter', d: 'pacing, voice, continuity', p: "Critique the current chapter: pacing, voice, dialogue, and continuity. Be specific and honest, then name the top three fixes." },
         ],
   );
-  let copyTimer: ReturnType<typeof setTimeout> | null = null;
-  let textareaEl: HTMLTextAreaElement | null = null;
+
+  let entries = $derived.by(() => (view?.items ?? []).filter((item) => item.kind === 'entry') as any[]);
+  let hasMessages = $derived(entries.some((item: any) => item.entry.kind === 'pi.user' || item.entry.kind === 'pi.assistant'));
+  let results = $derived.by(() => {
+    const map = new Map<string, any>();
+    for (const item of entries) {
+      const entry = item.entry;
+      if (entry.kind !== 'pi.tool-result') continue;
+      for (const message of entry.model ?? []) {
+        if (message?.toolCallId) map.set(message.toolCallId, message);
+      }
+    }
+    return map;
+  });
+  let pendingVisible = $derived(
+    !!pendingUser &&
+    !entries.some(
+      (item: any) =>
+        item.entry.kind === 'pi.user' &&
+        userText(item.entry).trim() === pendingUser.trim(),
+    ),
+  );
+  let liveMessage = $derived(live?.generation?.message ?? null);
+  let liveContent = $derived(contentBlocks(liveMessage));
+  let liveTools = $derived.by(() => {
+    const map = new Map<string, any>();
+    for (const slot of live?.tools ?? []) map.set(slot.callId, slot);
+    return map;
+  });
+
+  function contentBlocks(message: any): any[] {
+    const content = message?.content;
+    if (Array.isArray(content)) return content;
+    if (typeof content === 'string' && content) return [{ type: 'text', text: content }];
+    return [];
+  }
+
+  function textOf(message: any): string {
+    const content = message?.content;
+    if (typeof content === 'string') return content;
+    if (!Array.isArray(content)) return '';
+    return content
+      .filter((block: any) => block?.type === 'text' && typeof block.text === 'string')
+      .map((block: any) => block.text)
+      .join('');
+  }
+
+  function userText(entry: any): string {
+    const raw = textOf(entry?.model?.[0]) || entry?.data?.text || '';
+    if (raw.startsWith('[Context:')) {
+      const end = raw.indexOf('\n\n');
+      if (end >= 0) return raw.slice(end + 2);
+    }
+    return raw;
+  }
+
+  function assistantText(entry: any): string {
+    return (entry?.model ?? [])
+      .flatMap((message: any) => contentBlocks(message).filter((block: any) => block?.type === 'text').map((block: any) => block.text))
+      .join('\n\n');
+  }
+
+  function assistantBlocksOf(entry: any): any[] {
+    return (entry?.model ?? []).flatMap((message: any) => contentBlocks(message));
+  }
+
+  function toolOutput(result: any, slot: any): string {
+    if (result) {
+      const text = textOf(result);
+      if (text) return text;
+      if (typeof result.content === 'string') return result.content;
+      try { return JSON.stringify(result.content ?? ''); } catch { return ''; }
+    }
+    if (slot?.output) return String(slot.output);
+    if (slot?.details) {
+      try { return JSON.stringify(slot.details); } catch { return ''; }
+    }
+    return '';
+  }
+
+  function toolTone(result: any, slot: any): 'ok' | 'run' | 'bad' | 'idle' {
+    if (result?.isError || slot?.isError) return 'bad';
+    if (result) return 'ok';
+    if (slot && slot.status !== 'done') return 'run';
+    return 'idle';
+  }
+
+  function lastTextIndex(content: any[]): number {
+    let last = -1;
+    content.forEach((block, index) => {
+      if (block?.type === 'text' && block.text) last = index;
+    });
+    return last;
+  }
+
+  function itemKey(item: any): string {
+    if (item.kind === 'entry') return `e${item.entry.id}`;
+    if (item.kind === 'gap') return `g${item.after}-${item.upTo}`;
+    return 'earlier';
+  }
 
   function formatTime(ts?: number): string {
     if (!ts) return '';
@@ -92,88 +184,213 @@
       copiedText = text;
       if (copyTimer) clearTimeout(copyTimer);
       copyTimer = setTimeout(() => { copiedText = null; }, 1500);
-    } catch {
-      // Clipboard unavailable
-    }
+    } catch { }
   }
 
   function autoResize() {
     const el = textareaEl;
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = Math.min(el.scrollHeight, 320) + 'px';
+    el.style.height = Math.min(el.scrollHeight, 260) + 'px';
   }
 
-  $effect(() => {
-    const _msgs = messages;
-    const _resp = currentResponse;
-    const _tools = completedTools.length + activeTools.length;
-    const el = chatContainer;
-    if (el && stickToBottom) el.scrollTop = el.scrollHeight;
-  });
+  function handleKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+  }
 
-  onMount(async () => {
-    if (mode === 'knowledge') {
-      try {
-        const info = await api.getKnowledgeChatSession();
-        currentSessionId = info.sessionId;
-      } catch {
-        // Session will be created on first message
-      }
+  async function fetchTranscriptPage(limit = 100) {
+    const res = await fetch(`/api/books/${encodeURIComponent(transcriptSlug)}/chat/entries?limit=${limit}&order=descending`);
+    if (!res.ok) throw new Error(`Failed to load chat (${res.status})`);
+    return res.json();
+  }
 
-      try {
-        const history = await api.getChatHistory('__shared__', 100, currentSessionId ?? undefined);
-        messages = history.map(m => ({
-          role: m.role as 'user' | 'assistant',
-          text: m.content,
-          createdAt: Date.parse(m.createdAt) || undefined,
-        }));
-      } catch {
-        // No history yet
+  async function loadTranscript() {
+    try {
+      const page = await fetchTranscriptPage(100);
+      const list = [...(page.items ?? [])].reverse();
+      const before = page.next && list.length ? list[0].id - 1 : undefined;
+      view = transcript.merge({ entries: list, before } as any);
+      if (pendingUser) {
+        const found = view.items.some(
+          (item: any) =>
+            item.kind === 'entry' &&
+            item.entry.kind === 'pi.user' &&
+            userText(item.entry).trim() === pendingUser.trim(),
+        );
+        if (found) pendingUser = '';
       }
-    } else {
-      try {
-        const sessionResult = await api.getChatSession(slug);
-        currentSessionId = sessionResult.sessionId;
-      } catch {
-        // Session will be created on first message
-      }
-
-      try {
-        const history = await api.getChatHistory(slug, 100, currentSessionId ?? undefined);
-        messages = history.map(m => ({
-          role: m.role as 'user' | 'assistant',
-          text: m.content,
-          createdAt: Date.parse(m.createdAt) || undefined,
-        }));
-      } catch {
-        // No history yet
-      }
+    } catch (err: any) {
+      if (!view) chatError = err.message || 'Failed to load chat';
+    } finally {
+      loaded = true;
+      requestAnimationFrame(() => {
+        if (chatContainer && stickToBottom) chatContainer.scrollTop = chatContainer.scrollHeight;
+      });
     }
+  }
 
-    if (mode === 'book') {
-      try {
-        llmSettings = await api.getLlmSettings();
-        let model = '';
-        try {
-          const info = await api.getChatModel(slug);
-          model = `${info.model.provider}/${info.model.modelId}`;
-        } catch {
-          // Fall back to the stored/default model.
-        }
-        if (!model) {
-          const stored = localStorage.getItem(`chat-model-${slug}`);
-          model = stored || `${llmSettings.default.provider}/${llmSettings.default.model}`;
-        }
-        selectedModel = model;
-      } catch {
-        // Model picker stays hidden if settings are unavailable.
-      }
+  async function loadEarlier() {
+    try {
+      view = await transcript.loadEarlier({} as any);
+    } catch (err: any) {
+      chatError = err.message || 'Failed to load earlier messages';
     }
-  });
+  }
+
+  async function fillGap(gap: any) {
+    try {
+      view = await transcript.fillGap(gap, {} as any);
+    } catch (err: any) {
+      chatError = err.message || 'Failed to load messages';
+    }
+  }
 
   function sendSuggestion(prompt: string) {
     void send(prompt);
+  }
+
+  async function send(textOverride?: string) {
+    const msg = (textOverride ?? input).trim();
+    if (!msg || streaming) return;
+
+    chatError = '';
+    input = '';
+    if (textareaEl) textareaEl.style.height = 'auto';
+    pendingUser = msg;
+    streaming = true;
+    stickToBottom = true;
+    requestAnimationFrame(() => {
+      if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
+    });
+
+    const onTranscript = (merged: TranscriptView) => {
+      view = merged;
+      if (pendingUser) {
+        const found = merged.items.some((item: any) =>
+          item.kind === 'entry' &&
+          item.entry.kind === 'pi.user' &&
+          userText(item.entry).trim() === pendingUser.trim(),
+        );
+        if (found) pendingUser = '';
+      }
+    };
+    const onLive = (next: any) => { live = next; };
+    const onDone = () => {
+      streaming = false;
+      live = null;
+      pendingUser = '';
+      abortController = null;
+      onResponseDone?.();
+      void loadTranscript();
+    };
+    const onError = (err: string) => {
+      chatError = err;
+      streaming = false;
+      live = null;
+      abortController = null;
+    };
+
+    if (mode === 'knowledge') {
+      abortController = api.knowledgeChat(
+        msg,
+        currentSessionId ?? '',
+        () => {},
+        onDone,
+        onError,
+        undefined,
+        undefined,
+        undefined,
+        { transcript, onTranscript, onLive },
+      );
+    } else {
+      abortController = api.chat(
+        slug,
+        msg,
+        () => {},
+        onDone,
+        onError,
+        undefined,
+        undefined,
+        undefined,
+        {
+          activeChapterId,
+          sessionId: currentSessionId,
+          onEditDone,
+          onSessionInfo: (id) => { currentSessionId = id; },
+          transcript,
+          onTranscript,
+          onLive,
+        },
+      );
+    }
+  }
+
+  async function stop() {
+    if (!streaming) return;
+    try {
+      if (mode === 'knowledge') {
+        if (currentSessionId) await api.abortKnowledgeChat(currentSessionId).catch(() => {});
+      } else {
+        await api.abortChat(slug);
+      }
+      abortController?.abort();
+      abortController = null;
+      streaming = false;
+      live = null;
+      pendingUser = '';
+      await loadTranscript();
+    } catch (err: any) {
+      chatError = err.message || 'Failed to stop';
+      streaming = false;
+    }
+  }
+
+  async function retry() {
+    if (streaming || mode === 'knowledge') return;
+    chatError = '';
+    try {
+      const { lastUserMessage } = await api.getLastUserMessage(slug);
+      if (!lastUserMessage) {
+        chatError = 'No previous message to retry';
+        return;
+      }
+      await send(lastUserMessage);
+    } catch (err: any) {
+      chatError = err.message || 'Failed to retry';
+    }
+  }
+
+  async function startNewSession() {
+    try {
+      if (mode === 'knowledge') {
+        currentSessionId = (await api.createNewKnowledgeChatSession()).sessionId;
+      } else {
+        currentSessionId = (await api.createNewChatSession(slug)).sessionId;
+      }
+      transcript = createTranscript(transcriptSlug);
+      view = null;
+      live = null;
+      pendingUser = '';
+      chatError = '';
+      streaming = false;
+      loaded = false;
+      await loadTranscript();
+    } catch (err: any) {
+      chatError = err.message || 'Failed to create new session';
+    }
+  }
+
+  async function clearHistory() {
+    if (!confirm('Clear all chat history?')) return;
+    try {
+      if (mode === 'knowledge') {
+        if (currentSessionId) await fetch(`/api/knowledge/chat/session/${currentSessionId}`, { method: 'DELETE' });
+        await api.clearChatHistory('__shared__');
+      } else {
+        await api.clearChatHistory(slug, currentSessionId ?? undefined);
+      }
+    } catch { }
+    await startNewSession();
   }
 
   async function changeModel(event: Event) {
@@ -194,264 +411,104 @@
     }
   }
 
-  async function send(textOverride?: string) {
-    const msg = (textOverride ?? input).trim();
-    if (!msg || streaming) return;
-
-    chatError = '';
-    messages = [...messages, { role: 'user', text: msg, createdAt: Date.now() }];
-    input = '';
-    stickToBottom = true;
-    requestAnimationFrame(() => {
-      if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
-    });
-    if (textareaEl) textareaEl.style.height = 'auto';
-    streaming = true;
-    currentResponse = '';
-    thinkingText = '';
-    activeTools = [];
-    completedTools = [];
-
+  onMount(async () => {
     if (mode === 'knowledge') {
-      if (!currentSessionId) {
-        try {
-          const info = await api.getKnowledgeChatSession();
-          currentSessionId = info.sessionId;
-        } catch {
-          try {
-            const info = await api.createNewKnowledgeChatSession();
-            currentSessionId = info.sessionId;
-          } catch (err: any) {
-            chatError = err.message;
-            streaming = false;
-            return;
-          }
-        }
-      }
-      // Save user message to DB (session must exist first so history is scoped)
-      api.saveChatMessage('__shared__', 'user', msg, undefined, currentSessionId ?? undefined).catch(() => {});
-      abortController = api.knowledgeChat(
-        msg,
-        currentSessionId!,
-        (chunk) => { currentResponse += chunk; },
-        () => {
-          if (currentResponse) {
-            messages = [...messages, { role: 'assistant', text: currentResponse, thinking: thinkingText || undefined, createdAt: Date.now() }];
-            api.saveChatMessage('__shared__', 'assistant', currentResponse, thinkingText || undefined, currentSessionId ?? undefined).catch(() => {});
-          }
-          currentResponse = '';
-          thinkingText = '';
-          streaming = false;
-          abortController = null;
-          onResponseDone?.();
-        },
-        (err) => {
-          chatError = err;
-          if (currentResponse) {
-            const partial = currentResponse + '\n\n_[Stopped due to error]_';
-            messages = [...messages, { role: 'assistant', text: partial, thinking: thinkingText || undefined, createdAt: Date.now() }];
-            api.saveChatMessage('__shared__', 'assistant', partial, thinkingText || undefined, currentSessionId ?? undefined).catch(() => {});
-          }
-          currentResponse = '';
-          thinkingText = '';
-          streaming = false;
-          abortController = null;
-        },
-        (thinking) => { thinkingText += thinking; },
-        (toolName, args) => {
-          const id = ++toolIdCounter;
-          activeTools.push({ name: toolName, args, id });
-          completedTools = completedTools.filter(t => true);
-        },
-        (toolName, result, isError) => {
-          const tool = activeTools.find(t => t.name === toolName);
-          if (tool) {
-            activeTools = activeTools.filter(t => t !== tool);
-            let resultStr: string;
-            if (typeof result === 'string') resultStr = result.slice(0, 200);
-            else resultStr = JSON.stringify(result).slice(0, 200);
-            completedTools.push({ ...tool, result: resultStr, isError });
-          }
-        },
-      );
+      try { currentSessionId = (await api.getKnowledgeChatSession()).sessionId; } catch { }
     } else {
-      api.chat(
-        slug,
-        msg,
-        (chunk) => { currentResponse += chunk; },
-        () => {
-          if (currentResponse) {
-            messages = [...messages, { role: 'assistant', text: currentResponse, thinking: thinkingText || undefined, createdAt: Date.now() }];
-          }
-          currentResponse = '';
-          thinkingText = '';
-          streaming = false;
-          onResponseDone?.();
-        },
-        (err) => {
-          chatError = err;
-          if (currentResponse) {
-            messages = [...messages, { role: 'assistant', text: currentResponse + '\n\n_[Stopped due to error]_', thinking: thinkingText || undefined, createdAt: Date.now() }];
-          }
-          currentResponse = '';
-          thinkingText = '';
-          streaming = false;
-        },
-        (thinking) => { thinkingText += thinking; },
-        (toolName, args) => {
-          const id = ++toolIdCounter;
-          activeTools.push({ name: toolName, args, id });
-          completedTools = completedTools.filter(t => true); // trigger reactivity
-        },
-        (toolName, result, isError) => {
-          const tool = activeTools.find(t => t.name === toolName);
-          if (tool) {
-            activeTools = activeTools.filter(t => t !== tool);
-            let resultStr: string;
-            if (typeof result === 'string') resultStr = result.slice(0, 200);
-            else resultStr = JSON.stringify(result).slice(0, 200);
-            completedTools.push({ ...tool, result: resultStr, isError });
-          }
-        },
-        { activeChapterId, sessionId: currentSessionId, onEditDone, onSessionInfo: (id) => { currentSessionId = id; } }
-      );
+      try { currentSessionId = (await api.getChatSession(slug)).sessionId; } catch { }
     }
-  }
 
-  async function stop() {
-    if (!streaming) return;
-    try {
-      if (mode === 'knowledge') {
-        // Abort the agent session server-side, not just the fetch
-        if (currentSessionId) {
-          await api.abortKnowledgeChat(currentSessionId).catch(() => {});
+    await loadTranscript();
+
+    if (mode === 'book') {
+      try {
+        llmSettings = await api.getLlmSettings();
+        let model = '';
+        try {
+          const info = await api.getChatModel(slug);
+          model = `${info.model.provider}/${info.model.modelId}`;
+        } catch { }
+        if (!model) {
+          const stored = localStorage.getItem(`chat-model-${slug}`);
+          model = stored || `${llmSettings.default.provider}/${llmSettings.default.model}`;
         }
-        abortController?.abort();
-        abortController = null;
-      } else {
-        await api.abortChat(slug);
-      }
-      if (currentResponse) {
-        const stopped = currentResponse + '\n\n_[Stopped]_';
-        messages = [...messages, { role: 'assistant', text: stopped, thinking: thinkingText || undefined, createdAt: Date.now() }];
-        if (mode === 'knowledge') {
-          api.saveChatMessage('__shared__', 'assistant', stopped, thinkingText || undefined, currentSessionId ?? undefined).catch(() => {});
-        }
-      }
-      currentResponse = '';
-      thinkingText = '';
-      streaming = false;
-      currentSessionId = null;
-    } catch (err: any) {
-      chatError = err.message || 'Failed to stop';
-      streaming = false;
+        selectedModel = model;
+      } catch { }
     }
-  }
+  });
 
-  async function retry() {
-    if (streaming || mode === 'knowledge') return;
-    chatError = '';
-    try {
-      const { lastUserMessage: msg } = await api.getLastUserMessage(slug);
-
-      if (!msg) { chatError = 'No previous message to retry'; return; }
-      if (messages.length > 0 && messages[messages.length - 1].role === 'assistant') {
-        messages = messages.slice(0, -1);
-      }
-      const last = messages[messages.length - 1];
-      if (last && last.role === 'user' && last.text === msg) {
-        // Replace the duplicate user bubble instead of appending another
-        messages = messages.slice(0, -1);
-      }
-      messages = [...messages, { role: 'user', text: msg, createdAt: Date.now() }];
-      streaming = true;
-      currentResponse = '';
-      thinkingText = '';
-      activeTools = [];
-      completedTools = [];
-      currentSessionId = null;
-      api.chat(
-        slug,
-        msg,
-        (chunk) => { currentResponse += chunk; },
-        () => {
-          if (currentResponse) {
-            messages = [...messages, { role: 'assistant', text: currentResponse, thinking: thinkingText || undefined, createdAt: Date.now() }];
-          }
-          currentResponse = '';
-          thinkingText = '';
-          streaming = false;
-          onResponseDone?.();
-        },
-        (err) => {
-          chatError = err;
-          if (currentResponse) {
-            messages = [...messages, { role: 'assistant', text: currentResponse + '\n\n_[Stopped due to error]_', thinking: thinkingText || undefined, createdAt: Date.now() }];
-          }
-          currentResponse = '';
-          thinkingText = '';
-          streaming = false;
-        },
-        (thinking) => { thinkingText += thinking; },
-        (toolName, args) => {
-          const id = ++toolIdCounter;
-          activeTools.push({ name: toolName, args, id });
-          completedTools = completedTools.filter(t => true); // trigger reactivity
-        },
-        (toolName, result, isError) => {
-          const tool = activeTools.find(t => t.name === toolName);
-          if (tool) {
-            activeTools = activeTools.filter(t => t !== tool);
-            let resultStr: string;
-            if (typeof result === 'string') resultStr = result.slice(0, 200);
-            else resultStr = JSON.stringify(result).slice(0, 200);
-            completedTools.push({ ...tool, result: resultStr, isError });
-          }
-        },
-        { activeChapterId, sessionId: null, onEditDone, onSessionInfo: (id) => { currentSessionId = id; } }
-      );
-    } catch (err: any) {
-      chatError = err.message || 'Failed to retry';
-    }
-  }
-
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
-  }
-
-  async function startNewSession() {
-    try {
-      if (mode === 'knowledge') {
-        const info = await api.createNewKnowledgeChatSession();
-        currentSessionId = info.sessionId;
-      } else {
-        const { sessionId } = await api.createNewChatSession(slug);
-        currentSessionId = sessionId;
-      }
-      messages = [];
-      chatError = '';
-    } catch (err: any) {
-      chatError = err.message || 'Failed to create new session';
-    }
-  }
-
-  async function clearHistory() {
-    if (!confirm('Clear all chat history?')) return;
-    try {
-      if (mode === 'knowledge') {
-        if (currentSessionId) {
-          await fetch(`/api/knowledge/chat/session/${currentSessionId}`, { method: 'DELETE' });
-        }
-        await api.clearChatHistory('__shared__');
-      } else {
-        await api.clearChatHistory(slug, currentSessionId ?? undefined);
-      }
-      messages = [];
-      currentSessionId = null;
-      chatError = '';
-    } catch (err: any) { chatError = err.message; }
-  }
+  $effect(() => {
+    const _items = view?.items;
+    const _live = liveContent;
+    const _pending = pendingUser;
+    const el = chatContainer;
+    if (el && stickToBottom) el.scrollTop = el.scrollHeight;
+  });
 </script>
+
+{#snippet toolCard(call, result, slot)}
+  {@const tone = toolTone(result, slot)}
+  {@const output = toolOutput(result, slot)}
+  <details class="proc" open={tone === 'run'}>
+    <summary class="proc-head">
+      <span class="st" class:ok={tone === 'ok'} class:run={tone === 'run'} class:bad={tone === 'bad'}>
+        {tone === 'run' ? '●' : tone === 'bad' ? '✕' : tone === 'ok' ? '✓' : '⊘'}
+      </span>
+      <span class="name">{call?.name ?? 'tool'}</span>
+      <span class="arg">{describeToolActivity(call?.name ?? 'tool', call?.arguments ?? {}).label}</span>
+      <span class="chev">▾</span>
+    </summary>
+    {#if output}
+      <div class="proc-body"><pre>{output}</pre></div>
+    {/if}
+  </details>
+{/snippet}
+
+{#snippet assistantBlocks(content, isLive)}
+  {#each content as block, index (index)}
+    {#if block?.type === 'text' && block.text}
+      <div class="prose markdown">
+        {@html renderMarkdown(block.text)}
+        {#if isLive && index === lastTextIndex(content)}<span class="cursor-blink"></span>{/if}
+      </div>
+    {:else if block?.type === 'thinking' && (block.thinking || block.text)}
+      <details class="thinking" open={isLive && index === content.length - 1}>
+        <summary>thinking</summary>
+        <pre>{block.thinking ?? block.text}</pre>
+      </details>
+    {:else if block?.type === 'toolCall'}
+      {@render toolCard(block, results.get(block.id), liveTools.get(block.id))}
+    {/if}
+  {/each}
+{/snippet}
+
+{#snippet entryView(entry)}
+  {#if entry.kind === 'pi.user'}
+    <div class="msg-user">
+      <div class="author">
+        {entry.byTaskId ? 'Agent loop' : 'You'}
+        {#if entry.model?.[0]?.timestamp}<span class="when">{formatTime(entry.model[0].timestamp)}</span>{/if}
+      </div>
+      <div class="body">{userText(entry)}</div>
+    </div>
+  {:else if entry.kind === 'pi.assistant'}
+    <div class="msg-assistant">
+      {@render assistantBlocks(assistantBlocksOf(entry), false)}
+      {#if entry.model?.[0]?.errorMessage}
+        <div class="notice error">⚠ {entry.model[0].errorMessage}</div>
+      {/if}
+      {#if assistantText(entry)}
+        <button class="copy-btn" onclick={() => copyMessage(assistantText(entry))} title="Copy message">
+          {copiedText === assistantText(entry) ? 'Copied' : 'Copy'}
+        </button>
+      {/if}
+    </div>
+  {:else if entry.kind === 'pi.compaction'}
+    <div class="divider">context compacted</div>
+  {:else if entry.kind === 'pi.reset'}
+    <div class="divider">context reset</div>
+  {/if}
+{/snippet}
 
 <div class="chat-panel">
   <div class="panel-header">
@@ -464,7 +521,7 @@
     </div>
     <div class="session-controls">
       <button class="icon-btn" title="New session" onclick={startNewSession}><Icon name="plus" size={16} /></button>
-      {#if messages.length > 0}
+      {#if hasMessages}
         <button class="icon-btn" onclick={clearHistory} title="Clear chat history"><Icon name="trash" size={15} /></button>
       {/if}
       {#if onClose}
@@ -483,7 +540,9 @@
     }}
   >
     <div class="transcript-inner">
-      {#if messages.length === 0 && !streaming}
+      {#if !loaded}
+        <div class="load-hint">Loading conversation…</div>
+      {:else if !hasMessages && !pendingUser && liveContent.length === 0 && !streaming}
         <div class="hero">
           <h1>
             {#if mode === 'knowledge'}
@@ -511,63 +570,26 @@
         </div>
       {/if}
 
-      {#each messages as msg}
-        {#if msg.role === 'user'}
-          <div class="msg-user">
-            <div class="author">
-              You
-              {#if msg.createdAt}<span class="when">{formatTime(msg.createdAt)}</span>{/if}
-            </div>
-            <div class="body">{msg.text}</div>
-          </div>
-        {:else}
-          <div class="msg-assistant">
-            {#if msg.thinking}
-              <details class="thinking">
-                <summary>thinking</summary>
-                <pre>{msg.thinking}</pre>
-              </details>
-            {/if}
-            <div class="prose markdown">{@html renderMarkdown(msg.text)}</div>
-            <button class="copy-btn" onclick={() => copyMessage(msg.text)} title="Copy message">
-              {copiedText === msg.text ? 'Copied' : 'Copy'}
-            </button>
-          </div>
+      {#each view?.items ?? [] as item (itemKey(item))}
+        {#if item.kind === 'earlier'}
+          <button class="load-more" onclick={loadEarlier}>Load earlier messages</button>
+        {:else if item.kind === 'gap'}
+          <button class="load-more" onclick={() => fillGap(item)}>Load missing messages</button>
+        {:else if item.kind === 'entry'}
+          {@render entryView(item.entry)}
         {/if}
       {/each}
 
-      {#if completedTools.length > 0 || activeTools.length > 0}
-        <div class="msg-assistant">
-          {#each completedTools as tool (tool.id)}
-            {@const activity = describeToolActivity(tool.name, tool.args)}
-            <details class="proc">
-              <summary class="proc-head">
-                <span class="st ok">✓</span>
-                <span class="name">{tool.name}</span>
-                <span class="arg">{activity.label}</span>
-                <span class="chev">▾</span>
-              </summary>
-              {#if tool.result}
-                <div class="proc-body"><pre>{tool.result}</pre></div>
-              {/if}
-            </details>
-          {/each}
-          {#each activeTools as tool (tool.id)}
-            {@const activity = describeToolActivity(tool.name, tool.args)}
-            <div class="proc running">
-              <div class="proc-head">
-                <span class="st run">●</span>
-                <span class="name">{tool.name}</span>
-                <span class="arg">{activity.label}</span>
-              </div>
-            </div>
-          {/each}
+      {#if pendingVisible}
+        <div class="msg-user">
+          <div class="author">You</div>
+          <div class="body">{pendingUser}</div>
         </div>
       {/if}
 
-      {#if streaming && displayResponse}
+      {#if liveContent.length}
         <div class="msg-assistant">
-          <div class="prose markdown">{@html renderMarkdown(displayResponse)}<span class="cursor-blink"></span></div>
+          {@render assistantBlocks(liveContent, true)}
         </div>
       {/if}
 
@@ -615,7 +637,7 @@
         <span class="grow"></span>
         {#if streaming}
           <button type="button" class="btn" onclick={stop} title="Stop the response">Stop</button>
-        {:else if mode === 'book' && messages.length > 0}
+        {:else if mode === 'book' && hasMessages}
           <button type="button" class="btn" onclick={retry} title="Retry the last message">Retry</button>
         {/if}
         <button type="submit" class="btn primary" disabled={streaming || !input.trim()}>
@@ -1121,4 +1143,54 @@
     .hero h1 { font-size: 30px; }
     .suggestions { grid-template-columns: 1fr; }
   }
+
+
+  .load-hint {
+    padding: 24px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 12.5px;
+  }
+
+  .divider {
+    align-self: center;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .divider::before,
+  .divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .load-more {
+    align-self: center;
+    border: 1px solid var(--border);
+    border-radius: 99px;
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    font-size: 11.5px;
+    padding: 5px 12px;
+  }
+
+  .load-more:hover {
+    color: var(--text-primary);
+    border-color: var(--border-strong);
+  }
+
+  .proc-head .st.bad {
+    color: var(--error);
+  }
+
+
 </style>
