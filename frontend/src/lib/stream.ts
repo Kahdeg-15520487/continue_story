@@ -89,6 +89,22 @@ export class StreamAdapter {
       this.toolStatus.set(tool.callId, tool.status);
     }
 
+    // Committed tool results also drive the cards: the live frame can omit
+    // tools that finished between snapshots.
+    for (const entry of value.entries ?? []) {
+      if (entry?.kind !== 'pi.tool-result') continue;
+      for (const message of entry.model ?? []) {
+        const callId = message?.toolCallId;
+        if (!callId || this.toolStatus.get(callId) === 'done') continue;
+        const name = message.toolName ?? 'tool';
+        if (!this.toolStatus.has(callId)) {
+          this.handlers.onToolStart?.(name, calls.get(callId) ?? {});
+        }
+        this.handlers.onToolEnd?.(name, textOf(message), Boolean(message.isError));
+        this.toolStatus.set(callId, 'done');
+      }
+    }
+
     if (live?.run) this.sawRun = true;
     if (live?.runFailure) {
       this.handlers.onError?.(runFailureText(live.runFailure));

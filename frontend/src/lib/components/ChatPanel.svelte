@@ -28,6 +28,7 @@
   let thinkingText = $state('');
   let chatError = $state('');
   let chatContainer: HTMLDivElement;
+  let stickToBottom = true;
   let currentSessionId = $state<string | null>(null);
   let abortController: AbortController | null = null;
   let activeTools = $state<Array<{ name: string; args: any; id: number }>>([]);
@@ -106,12 +107,9 @@
   $effect(() => {
     const _msgs = messages;
     const _resp = currentResponse;
+    const _tools = completedTools.length + activeTools.length;
     const el = chatContainer;
-    if (el) {
-      // Only auto-scroll when the user is already near the bottom
-      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-      if (nearBottom) el.scrollTop = el.scrollHeight;
-    }
+    if (el && stickToBottom) el.scrollTop = el.scrollHeight;
   });
 
   onMount(async () => {
@@ -203,6 +201,10 @@
     chatError = '';
     messages = [...messages, { role: 'user', text: msg, createdAt: Date.now() }];
     input = '';
+    stickToBottom = true;
+    requestAnimationFrame(() => {
+      if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
+    });
     if (textareaEl) textareaEl.style.height = 'auto';
     streaming = true;
     currentResponse = '';
@@ -471,7 +473,15 @@
     </div>
   </div>
 
-  <div class="transcript" bind:this={chatContainer} aria-live="polite">
+  <div
+    class="transcript"
+    bind:this={chatContainer}
+    aria-live="polite"
+    onscroll={(e) => {
+      const el = e.currentTarget;
+      stickToBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    }}
+  >
     <div class="transcript-inner">
       {#if messages.length === 0 && !streaming}
         <div class="hero">
@@ -526,7 +536,7 @@
         {/if}
       {/each}
 
-      {#if streaming && (completedTools.length > 0 || activeTools.length > 0)}
+      {#if completedTools.length > 0 || activeTools.length > 0}
         <div class="msg-assistant">
           {#each completedTools as tool (tool.id)}
             {@const activity = describeToolActivity(tool.name, tool.args)}
