@@ -33,7 +33,23 @@
 
   let showForm = $state(false);
   let editingId = $state<string | null>(null);
-  let form = $state({ id: '', name: '', kind: 'deepseek', baseUrl: '', apiKey: '', modelsText: '' });
+  let form = $state({ id: '', name: '', kind: 'deepseek', baseUrl: '', apiKey: '' });
+
+  type DiscoveredModel = { id: string; name?: string; contextWindow?: number; maxTokens?: number };
+  let discovered = $state<DiscoveredModel[]>([]);
+  let selectedModelIds = $state<string[]>([]);
+  let discovering = $state(false);
+  let discoverError = $state('');
+  let modelFilter = $state('');
+  let manualModel = $state('');
+
+  let filteredDiscovered = $derived.by(() => {
+    const q = modelFilter.trim().toLowerCase();
+    if (!q) return discovered;
+    return discovered.filter(
+      (model) => model.id.toLowerCase().includes(q) || (model.name ?? '').toLowerCase().includes(q),
+    );
+  });
 
   let defaultProvider = $state('');
   let defaultModel = $state('');
@@ -56,6 +72,11 @@
       defaultProvider = loaded.default.provider;
       defaultModel = loaded.default.model;
       thinkingLevel = loaded.default.thinkingLevel;
+
+      const providerModels = loaded.providers.find((p) => p.id === defaultProvider)?.models ?? [];
+      if (!providerModels.some((model) => model.id === defaultModel)) {
+        defaultModel = providerModels[0]?.id ?? '';
+      }
     } catch (err: any) {
       error = err.message || 'Failed to load settings';
     } finally {
@@ -66,33 +87,95 @@
   onMount(load);
 
   function resetForm() {
-    form = { id: '', name: '', kind: 'deepseek', baseUrl: '', apiKey: '', modelsText: '' };
+    form = { id: '', name: '', kind: 'deepseek', baseUrl: '', apiKey: '' };
+    discovered = [];
+    selectedModelIds = [];
+    discovering = false;
+    discoverError = '';
+    modelFilter = '';
+    manualModel = '';
     editingId = null;
     showForm = false;
+  }
+
+  function prefillCatalog(kind: string) {
+    const catalog = settings?.catalog.find((entry) => entry.id === kind);
+    discovered = catalog ? catalog.models.map((model) => ({ ...model })) : [];
+    selectedModelIds = discovered.map((model) => model.id);
+  }
+
+  async function loadModels(quiet = false) {
+    if (discovering) return;
+    discovering = true;
+    if (!quiet) discoverError = '';
+    try {
+      const result = await api.discoverLlmModels({
+        id: editingId ?? undefined,
+        kind: form.kind,
+        baseUrl: form.baseUrl.trim() || undefined,
+        apiKey: form.apiKey.trim() || undefined,
+      });
+      discovered = result.models;
+      const kept = selectedModelIds.filter((id) => discovered.some((model) => model.id === id));
+      selectedModelIds = kept.length > 0 ? kept : discovered.map((model) => model.id);
+      discoverError = '';
+    } catch (err: any) {
+      if (!quiet) discoverError = err.message || 'Could not load models';
+    } finally {
+      discovering = false;
+    }
+  }
+
+  function toggleModel(id: string) {
+    selectedModelIds = selectedModelIds.includes(id)
+      ? selectedModelIds.filter((value) => value !== id)
+      : [...selectedModelIds, id];
+  }
+
+  function selectAllModels() {
+    selectedModelIds = discovered.map((model) => model.id);
+  }
+
+  function addManualModel() {
+    const id = manualModel.trim();
+    if (!id) return;
+    if (!discovered.some((model) => model.id === id)) {
+      discovered = [...discovered, { id, name: id }];
+    }
+    if (!selectedModelIds.includes(id)) selectedModelIds = [...selectedModelIds, id];
+    manualModel = '';
   }
 
   function startAdd() {
     resetForm();
     showForm = true;
+    prefillCatalog(form.kind);
   }
 
   function startEdit(provider: Provider) {
     form = {
       id: provider.id,
       name: provider.name,
-      kind: provider.kind,
+      kind: provider.kind as typeof form.kind,
       baseUrl: provider.baseUrl ?? '',
       apiKey: '',
-      modelsText: provider.models.map((m) => m.id).join(', '),
     };
     editingId = provider.id;
     showForm = true;
+    discovered = provider.models.map((model) => ({ ...model }));
+    selectedModelIds = provider.models.map((model) => model.id);
+    discoverError = '';
+    modelFilter = '';
+    manualModel = '';
+    // Refresh the live list from the provider using the stored key.
+    void loadModels(true);
   }
 
   function changeKind(event: Event) {
     const kind = (event.target as HTMLSelectElement).value;
     form.kind = kind;
     if (!editingId && !form.id) form.id = kind;
+    if (!editingId) prefillCatalog(kind);
   }
 
   async function saveProvider() {
@@ -100,14 +183,18 @@
       error = 'Provider id is required';
       return;
     }
+    if (discovered.length > 0 && selectedModelIds.length === 0) {
+      error = 'Select at least one model to expose for this provider';
+      return;
+    }
+
     saving = true;
     error = '';
     try {
-      const models = form.modelsText
-        .split(',')
-        .map((value) => value.trim())
-        .filter(Boolean)
-        .map((id) => ({ id }));
+      const models = selectedModelIds.map((id) => {
+        const found = discovered.find((model) => model.id === id);
+        return { id, name: found?.name };
+      });
 
       await api.saveLlmProvider({
         id: form.id.trim(),
@@ -147,6 +234,16 @@
     } finally {
       testingId = null;
     }
+  }
+
+  async function useProvider(provider: Provider) {
+    if (provider.models.length === 0) {
+      error = 'This provider has no models selected yet';
+      return;
+    }
+    defaultProvider = provider.id;
+    defaultModel = provider.models[0].id;
+    await saveDefault();
   }
 
   async function saveDefault() {
@@ -227,14 +324,71 @@
             </div>
             <div class="field">
               <label for="provider-key">API key {#if editingId}<span class="muted">(leave blank to keep)</span>{/if}</label>
-              <input id="provider-key" type="password" bind:value={form.apiKey} autocomplete="off" placeholder="sk-…" />
+              <input
+                id="provider-key"
+                type="password"
+                bind:value={form.apiKey}
+                autocomplete="off"
+                placeholder="sk-…"
+                onblur={() => { if (form.apiKey.trim() && discovered.length === 0) void loadModels(true); }}
+              />
             </div>
-            {#if form.kind === 'custom'}
-              <div class="field wide">
-                <label for="provider-models">Model IDs <span class="muted">(comma separated)</span></label>
-                <input id="provider-models" bind:value={form.modelsText} placeholder="qwen2.5-coder:7b, llama-3.1-8b" />
+            <div class="field wide models-field">
+              <div class="models-head">
+                <div>
+                  <label for="provider-models">Models</label>
+                  <p class="muted small">Loaded from the provider — choose which ones to expose.</p>
+                </div>
+                <button class="btn small" type="button" onclick={() => loadModels()} disabled={discovering}>
+                  {discovering ? 'Loading…' : 'Load models'}
+                </button>
               </div>
-            {/if}
+
+              {#if discoverError}
+                <p class="field-error">{discoverError}</p>
+              {/if}
+
+              {#if discovered.length > 0}
+                <div class="models-toolbar">
+                  <input class="model-search" bind:value={modelFilter} placeholder="Filter models…" />
+                  <button class="link-btn" type="button" onclick={selectAllModels}>All</button>
+                  <button class="link-btn" type="button" onclick={() => (selectedModelIds = [])}>None</button>
+                </div>
+                <div class="model-list">
+                  {#each filteredDiscovered as model (model.id)}
+                    <label class="model-row" class:selected={selectedModelIds.includes(model.id)}>
+                      <input
+                        type="checkbox"
+                        checked={selectedModelIds.includes(model.id)}
+                        onchange={() => toggleModel(model.id)}
+                      />
+                      <span class="model-id">{model.id}</span>
+                      {#if model.name && model.name !== model.id}
+                        <span class="model-name">{model.name}</span>
+                      {/if}
+                      {#if model.contextWindow}
+                        <span class="model-ctx">{Math.round(model.contextWindow / 1000)}k</span>
+                      {/if}
+                    </label>
+                  {/each}
+                  {#if filteredDiscovered.length === 0}
+                    <p class="model-empty">No models match “{modelFilter}”.</p>
+                  {/if}
+                </div>
+                <p class="muted small">{selectedModelIds.length} of {discovered.length} selected</p>
+              {:else}
+                <p class="muted small">Add the API key, then load the list. No manual model IDs needed.</p>
+              {/if}
+
+              <div class="manual-model">
+                <input
+                  bind:value={manualModel}
+                  placeholder="Or add a model ID manually"
+                  onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addManualModel(); } }}
+                />
+                <button class="btn" type="button" onclick={addManualModel} disabled={!manualModel.trim()}>Add</button>
+              </div>
+            </div>
             <div class="form-actions">
               <button class="btn primary" onclick={saveProvider} disabled={saving}>
                 {saving ? 'Saving…' : 'Save provider'}
@@ -265,6 +419,7 @@
                 <button class="btn" onclick={() => test(provider)} disabled={testingId === provider.id}>
                   {testingId === provider.id ? 'Testing…' : 'Test'}
                 </button>
+                <button class="btn" onclick={() => useProvider(provider)} disabled={provider.models.length === 0}>Use</button>
                 <button class="btn" onclick={() => startEdit(provider)}>Edit</button>
                 <button class="btn danger" onclick={() => removeProvider(provider)}>Delete</button>
               </div>
@@ -727,5 +882,141 @@
   .ghost-link:hover {
     color: var(--text-primary);
     border-color: var(--border-strong);
+  }
+
+  .small {
+    font-size: 11.5px;
+  }
+
+  .models-field {
+    border-top: 1px dashed var(--border);
+    padding-top: 14px;
+    margin-top: 2px;
+  }
+
+  .models-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+
+  .models-head .muted {
+    margin-top: 2px;
+  }
+
+  .btn.small {
+    height: 32px;
+    padding: 0 12px;
+    font-size: 12px;
+  }
+
+  .models-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .model-search {
+    flex: 1;
+    height: 34px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-elevated);
+    font-size: 12.5px;
+  }
+
+  .link-btn {
+    border: none;
+    background: none;
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px;
+  }
+
+  .model-list {
+    max-height: 230px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-elevated);
+  }
+
+  .model-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    font-size: 12.5px;
+  }
+
+  .model-row:last-child {
+    border-bottom: none;
+  }
+
+  .model-row.selected {
+    background: var(--accent-soft);
+  }
+
+  .model-row input {
+    width: 15px;
+    height: 15px;
+    accent-color: var(--accent);
+    flex-shrink: 0;
+  }
+
+  .model-id {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+  }
+
+  .model-name {
+    flex: 1;
+    min-width: 0;
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .model-ctx {
+    margin-left: auto;
+    color: var(--text-muted);
+    font-size: 10.5px;
+  }
+
+  .model-empty {
+    padding: 14px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+
+  .manual-model {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  .manual-model input {
+    flex: 1;
+    height: 34px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-elevated);
+    font-size: 12.5px;
+  }
+
+  .field-error {
+    margin: 2px 0 6px;
+    color: var(--error);
+    font-size: 12px;
   }
 </style>

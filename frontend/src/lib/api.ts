@@ -410,6 +410,18 @@ export const api = {
   // LLM provider settings
   getLlmSettings: () => request<any>('/settings/llm'),
 
+  discoverLlmModels: (data: {
+    id?: string;
+    kind?: string;
+    baseUrl?: string;
+    api?: string;
+    apiKey?: string;
+  }) =>
+    request<{ models: Array<{ id: string; name?: string; contextWindow?: number; maxTokens?: number }>; source: string }>(
+      '/settings/llm/discover',
+      { method: 'POST', body: JSON.stringify(data) },
+    ),
+
   saveLlmProvider: (data: {
     id: string;
     name?: string;

@@ -81,6 +81,22 @@ const DEFAULT_API: Record<ProviderKind, string> = {
   custom: "openai-completions",
 };
 
+const DEFAULT_BASE: Record<ProviderKind, string> = {
+  deepseek: "https://api.deepseek.com/v1",
+  openai: "https://api.openai.com/v1",
+  anthropic: "https://api.anthropic.com/v1",
+  google: "https://generativelanguage.googleapis.com/v1beta",
+  openrouter: "https://openrouter.ai/api/v1",
+  custom: "",
+};
+
+export type DiscoveredModel = {
+  id: string;
+  name?: string;
+  contextWindow?: number;
+  maxTokens?: number;
+};
+
 const CONFIG_PATH =
   process.env.LLM_CONFIG ||
   join(dirname(process.env.DURABLE_DB || "/data/durable.sqlite"), "llm-config.json");
@@ -281,15 +297,21 @@ function buildCustomProvider(entry: ProviderEntry) {
   const api = entry.api ?? DEFAULT_API[entry.kind] ?? "openai-completions";
   const factory = BUILTIN_FACTORIES[entry.kind];
   const base = factory ? factory() : undefined;
-  const inherited = base && entry.kind !== "custom" ? base.getModels() : [];
-  const list = inherited.length > 0
-    ? inherited
-    : (entry.models ?? []).map((model) => customModel(entry, model, api));
+  const inherited: any[] = base && entry.kind !== "custom" ? (base as any).getModels() : [];
+  const selected = entry.models && entry.models.length > 0 ? entry.models : undefined;
+
+  let list: any[];
+  if (selected) {
+    const known = new Map(inherited.map((model: any) => [model.id, model]));
+    list = selected.map((model) => known.get(model.id) ?? customModel(entry, model, api));
+  } else {
+    list = inherited;
+  }
 
   return createProvider({
     id: entry.id,
     name: entry.name ?? entry.id,
-    baseUrl: entry.baseUrl,
+    baseUrl: entry.baseUrl ?? DEFAULT_BASE[entry.kind] ?? undefined,
     auth: staticAuth(key) as any,
     models: list as any,
     api: apiFor(api, entry.kind),
@@ -311,7 +333,7 @@ export function getModels(): MutableModels {
 
   for (const entry of Object.values(config.providers)) {
     if (entry.enabled === false) continue;
-    if (entry.kind === "custom" || entry.baseUrl) {
+    if (entry.kind === "custom" || entry.baseUrl || (entry.models && entry.models.length > 0)) {
       models.setProvider(buildCustomProvider(entry));
     }
   }
@@ -322,7 +344,7 @@ export function getModels(): MutableModels {
 
 function refreshProvider(entry: ProviderEntry): void {
   const models = getModels();
-  if (entry.kind === "custom" || entry.baseUrl) {
+  if (entry.kind === "custom" || entry.baseUrl || (entry.models && entry.models.length > 0)) {
     models.setProvider(buildCustomProvider(entry));
     return;
   }
@@ -461,6 +483,97 @@ export function setDefaultModel(input: { provider?: string; modelId?: string; th
 
   saveConfig(config);
   return getDefaultModel();
+}
+
+export async function discoverModels(input: {
+  id?: string;
+  kind?: ProviderKind;
+  baseUrl?: string;
+  api?: string;
+  apiKey?: string;
+}): Promise<{ models: DiscoveredModel[]; source: "api" }> {
+  const config = loadConfig();
+  const entry = input.id ? config.providers[input.id] : undefined;
+  const kind = (input.kind ?? entry?.kind ?? "custom") as ProviderKind;
+  const baseUrl = (input.baseUrl ?? entry?.baseUrl ?? DEFAULT_BASE[kind] ?? "").replace(/\/+$/, "");
+  const key =
+    input.apiKey?.trim() ||
+    (entry ? resolveKey(entry) : undefined) ||
+    (input.id ? envKey(input.id) : undefined);
+
+  if (!key) throw new Error("Add an API key first");
+  if (!baseUrl) throw new Error("Base URL is required");
+
+  const headers: Record<string, string> = { Accept: "application/json" };
+  let url = `${baseUrl}/models`;
+
+  if (kind === "anthropic") {
+    headers["x-api-key"] = key;
+    headers["anthropic-version"] = "2023-06-01";
+    url = `${baseUrl}/models?limit=1000`;
+  } else if (kind === "google") {
+    url = `${baseUrl}/models?key=${encodeURIComponent(key)}&pageSize=1000`;
+  } else {
+    headers.Authorization = `Bearer ${key}`;
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(url, { headers });
+  } catch (err: any) {
+    throw new Error(`Could not reach ${baseUrl}: ${err?.message ?? err}`);
+  }
+
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(`Provider returned ${response.status}: ${text.slice(0, 240)}`);
+  }
+
+  let data: any;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error("Provider returned a non-JSON response");
+  }
+
+  let raw: any[] = [];
+  if (kind === "google" || kind === "custom") {
+    if (Array.isArray(data.models)) raw = data.models;
+    else if (Array.isArray(data.data)) raw = data.data;
+  }
+  if (raw.length === 0 && Array.isArray(data.data)) raw = data.data;
+  if (raw.length === 0 && Array.isArray(data.models)) raw = data.models;
+  if (raw.length === 0 && Array.isArray(data)) raw = data;
+
+  if (kind === "google") {
+    raw = raw.filter(
+      (model: any) =>
+        !Array.isArray(model.supportedGenerationMethods) ||
+        model.supportedGenerationMethods.includes("generateContent"),
+    );
+  }
+
+  const models: DiscoveredModel[] = raw
+    .map((model: any) => {
+      const id = String(model.id ?? model.name ?? model.model ?? "").replace(/^models\//, "");
+      if (!id) return null;
+      return {
+        id,
+        name: model.displayName ?? model.display_name ?? model.name ?? id,
+        contextWindow:
+          Number(model.contextWindow ?? model.context_length ?? model.max_input_tokens ?? 0) || undefined,
+        maxTokens:
+          Number(model.maxTokens ?? model.max_output_tokens ?? model.max_completion_tokens ?? 0) || undefined,
+      } as DiscoveredModel;
+    })
+    .filter((model): model is DiscoveredModel => Boolean(model));
+
+  const seen = new Set<string>();
+  const unique = models.filter((model) => (seen.has(model.id) ? false : (seen.add(model.id), true)));
+  unique.sort((a, b) => a.id.localeCompare(b.id));
+
+  if (unique.length === 0) throw new Error("Provider returned no models");
+  return { models: unique, source: "api" };
 }
 
 export async function testProvider(id: string) {

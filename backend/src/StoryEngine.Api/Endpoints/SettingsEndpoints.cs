@@ -14,6 +14,14 @@ public static class SettingsEndpoints
             return Results.Content(result.Body, "application/json", statusCode: result.StatusCode);
         });
 
+        group.MapPost("/discover", async (HttpContext ctx, IAgentService agent, CancellationToken ct) =>
+        {
+            using var reader = new StreamReader(ctx.Request.Body);
+            var body = await reader.ReadToEndAsync(ct);
+            var result = await agent.DiscoverModelsAsync(body, ct);
+            return Results.Content(result.Body, "application/json", statusCode: result.StatusCode);
+        });
+
         group.MapPost("/providers", async (HttpContext ctx, IAgentService agent, CancellationToken ct) =>
         {
             using var reader = new StreamReader(ctx.Request.Body);

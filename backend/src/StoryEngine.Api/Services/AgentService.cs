@@ -244,6 +244,9 @@ public class AgentService : IAgentService
     public Task<AgentResponse> GetLlmSettingsAsync(CancellationToken ct = default) =>
         SendAsync(HttpMethod.Get, "/api/settings/llm", null, ct);
 
+    public Task<AgentResponse> DiscoverModelsAsync(string json, CancellationToken ct = default) =>
+        SendAsync(HttpMethod.Post, "/api/settings/llm/discover", json, ct);
+
     public Task<AgentResponse> SaveProviderAsync(string json, CancellationToken ct = default) =>
         SendAsync(HttpMethod.Post, "/api/settings/llm/providers", json, ct);
 

@@ -18,7 +18,7 @@ import {
   type DurableHarness,
 } from "./harness.js";
 import { LIBRARY_ROOT, PORT } from "./config.js";
-import { deleteProvider, getSettings, saveProvider, setDefaultModel, testProvider } from "./llm.js";
+import { deleteProvider, discoverModels, getSettings, saveProvider, setDefaultModel, testProvider } from "./llm.js";
 
 function cors(): Record<string, string> {
   return {
@@ -120,6 +120,23 @@ async function handleRequest(harness: DurableHarness, req: IncomingMessage, res:
 
   if (path === "/api/settings/llm" && method === "GET") {
     sendJson(res, 200, getSettings());
+    return;
+  }
+
+  if (path === "/api/settings/llm/discover" && method === "POST") {
+    try {
+      const body = await readJson(req);
+      const result = await discoverModels({
+        id: typeof body.id === "string" && body.id ? body.id : undefined,
+        kind: typeof body.kind === "string" ? body.kind : undefined,
+        baseUrl: typeof body.baseUrl === "string" && body.baseUrl ? body.baseUrl : undefined,
+        api: typeof body.api === "string" && body.api ? body.api : undefined,
+        apiKey: typeof body.apiKey === "string" && body.apiKey ? body.apiKey : undefined,
+      });
+      sendJson(res, 200, result);
+    } catch (err: any) {
+      sendJson(res, 400, { error: err?.message ?? String(err) });
+    }
     return;
   }
 

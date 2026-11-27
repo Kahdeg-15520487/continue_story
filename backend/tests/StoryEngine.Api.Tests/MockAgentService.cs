@@ -86,6 +86,9 @@ public class MockAgentService : IAgentService
         return Task.FromResult("{\"items\":[],\"next\":null}");
     }
 
+    public Task<AgentResponse> DiscoverModelsAsync(string json, CancellationToken ct = default) =>
+        Task.FromResult(new AgentResponse(200, "{\"models\":[]}"));
+
     public Task<AgentResponse> GetLlmSettingsAsync(CancellationToken ct = default) =>
         Task.FromResult(new AgentResponse(200, "{\"providers\":[],\"default\":{}}"));
 
