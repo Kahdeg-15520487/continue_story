@@ -290,7 +290,12 @@ public static class ChatEndpoints
                 !agent.TryGetProperty("model", out var model))
                 return Results.NotFound(new { error = "Conversation model unavailable" });
 
-            return Results.Ok(new { model });
+            var provider = model.TryGetProperty("provider", out var providerEl) ? providerEl.GetString() : null;
+            var modelId = model.TryGetProperty("modelId", out var modelEl) ? modelEl.GetString() : null;
+            if (string.IsNullOrEmpty(provider) || string.IsNullOrEmpty(modelId))
+                return Results.NotFound(new { error = "Conversation model unavailable" });
+
+            return Results.Ok(new { model = new { provider, modelId } });
         });
 
         // Pick the model for this book's conversation (per-chat model selector).
