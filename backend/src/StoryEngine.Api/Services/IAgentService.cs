@@ -54,6 +54,8 @@ public interface IAgentService
     /// <summary>LLM provider settings (keys masked) from the agent.</summary>
     Task<AgentResponse> GetLlmSettingsAsync(CancellationToken ct = default);
     Task<AgentResponse> DiscoverModelsAsync(string json, CancellationToken ct = default);
+    Task<AgentResponse> ConfigureConversationAsync(string sessionId, string json, CancellationToken ct = default);
+    Task<AgentResponse> GetConversationAsync(string sessionId, CancellationToken ct = default);
     Task<AgentResponse> SaveProviderAsync(string json, CancellationToken ct = default);
     Task<AgentResponse> DeleteProviderAsync(string providerId, CancellationToken ct = default);
     Task<AgentResponse> TestProviderAsync(string providerId, CancellationToken ct = default);

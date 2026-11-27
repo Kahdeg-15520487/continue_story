@@ -271,6 +271,45 @@ public static class ChatEndpoints
             return Results.Ok(new { sessions });
         });
 
+        // The model this book's conversation is currently using.
+        app.MapGet("/api/books/{slug}/chat/model", async (
+            string slug,
+            IAgentService agentService,
+            CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(slug) || slug.Contains("..") || slug.Contains('/') || slug.Contains('\\'))
+                return Results.BadRequest(new { error = "Invalid book slug" });
+
+            var sessionId = await agentService.EnsureSessionAsync(slug, ct);
+            var result = await agentService.GetConversationAsync(sessionId, ct);
+            if (result.StatusCode != 200)
+                return Results.Content(result.Body, "application/json", statusCode: result.StatusCode);
+
+            using var doc = System.Text.Json.JsonDocument.Parse(result.Body);
+            if (!doc.RootElement.TryGetProperty("agent", out var agent) ||
+                !agent.TryGetProperty("model", out var model))
+                return Results.NotFound(new { error = "Conversation model unavailable" });
+
+            return Results.Ok(new { model });
+        });
+
+        // Pick the model for this book's conversation (per-chat model selector).
+        app.MapPost("/api/books/{slug}/chat/model", async (
+            string slug,
+            HttpContext ctx,
+            IAgentService agentService,
+            CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(slug) || slug.Contains("..") || slug.Contains('/') || slug.Contains('\\'))
+                return Results.BadRequest(new { error = "Invalid book slug" });
+
+            using var reader = new StreamReader(ctx.Request.Body);
+            var body = await reader.ReadToEndAsync(ct);
+            var sessionId = await agentService.EnsureSessionAsync(slug, ct);
+            var result = await agentService.ConfigureConversationAsync(sessionId, body, ct);
+            return Results.Content(result.Body, "application/json", statusCode: result.StatusCode);
+        });
+
         // Abort the current agent response
         app.MapPost("/api/books/{slug}/chat/abort", async (
             string slug,

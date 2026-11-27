@@ -439,6 +439,15 @@ export const api = {
   deleteLlmProvider: (id: string) =>
     request<{ deleted: boolean }>(`/settings/llm/providers/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 
+  getChatModel: (slug: string) =>
+    request<{ model: { provider: string; modelId: string } }>(`/books/${encodeURIComponent(slug)}/chat/model`),
+
+  setChatModel: (slug: string, provider: string, modelId: string) =>
+    request<{ configured: boolean }>(`/books/${encodeURIComponent(slug)}/chat/model`, {
+      method: 'POST',
+      body: JSON.stringify({ model: { provider, modelId } }),
+    }),
+
   testLlmProvider: (id: string) =>
     request<any>(`/settings/llm/providers/${encodeURIComponent(id)}/test`, { method: 'POST' }),
 

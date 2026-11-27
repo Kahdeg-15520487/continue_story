@@ -46,6 +46,34 @@
   });
 
   let copiedText = $state<string | null>(null);
+
+  // Model picker (per conversation) — options come from the LLM settings.
+  let llmSettings = $state<any>(null);
+  let selectedModel = $state('');
+  let modelSaving = $state(false);
+  let modelGroups = $derived.by(() => {
+    const groups: Array<[string, any[]]> = [];
+    for (const provider of llmSettings?.providers ?? []) {
+      if (provider.configured && provider.models?.length) groups.push([provider.id, provider.models]);
+    }
+    return groups;
+  });
+
+  let suggestions = $derived(
+    mode === 'knowledge'
+      ? [
+          { k: '🔎', t: 'Find gaps', d: 'what the notes are missing', p: 'Review the shared knowledge base and list the most important gaps, with a short note on why each matters.' },
+          { k: '🧵', t: 'Connect entries', d: 'find links between topics', p: 'Look through the shared knowledge base and point out connections between entries that are not yet linked.' },
+          { k: '📝', t: 'Summarize a category', d: 'pull the key facts together', p: 'Summarize the key facts in the most populated knowledge base category, with links to the entries.' },
+          { k: '⚖️', t: 'Check contradictions', d: 'where sources disagree', p: 'Scan the shared knowledge base for contradictions or duplicated facts and list them plainly.' },
+        ]
+      : [
+          { k: '📖', t: 'Continue the chapter', d: 'pick up where the prose stops', p: 'Continue the current chapter from where it stops. Match the established voice and keep the scene moving.' },
+          { k: '✂️', t: 'Tighten the prose', d: 'cut filler, sharpen rhythm', p: 'Tighten the prose in the current chapter. Cut filler and repetition and sharpen the rhythm, but keep every event and line of dialogue.' },
+          { k: '🧭', t: "What's next?", d: 'three directions for the next scene', p: 'Give me three concrete directions the next scene could take, with the trade-offs of each. Do not write the scene yet.' },
+          { k: '🪄', t: 'Critique the chapter', d: 'pacing, voice, continuity', p: "Critique the current chapter: pacing, voice, dialogue, and continuity. Be specific and honest, then name the top three fixes." },
+        ],
+  );
   let copyTimer: ReturnType<typeof setTimeout> | null = null;
   let textareaEl: HTMLTextAreaElement | null = null;
 
@@ -124,10 +152,52 @@
         // No history yet
       }
     }
+
+    if (mode === 'book') {
+      try {
+        llmSettings = await api.getLlmSettings();
+        let model = '';
+        try {
+          const info = await api.getChatModel(slug);
+          model = `${info.model.provider}/${info.model.modelId}`;
+        } catch {
+          // Fall back to the stored/default model.
+        }
+        if (!model) {
+          const stored = localStorage.getItem(`chat-model-${slug}`);
+          model = stored || `${llmSettings.default.provider}/${llmSettings.default.model}`;
+        }
+        selectedModel = model;
+      } catch {
+        // Model picker stays hidden if settings are unavailable.
+      }
+    }
   });
 
-  async function send() {
-    const msg = input.trim();
+  function sendSuggestion(prompt: string) {
+    void send(prompt);
+  }
+
+  async function changeModel(event: Event) {
+    const value = (event.target as HTMLSelectElement).value;
+    if (!value) return;
+    const [provider, ...rest] = value.split('/');
+    const modelId = rest.join('/');
+    selectedModel = value;
+    try { localStorage.setItem(`chat-model-${slug}`, value); } catch { }
+    if (mode !== 'book') return;
+    modelSaving = true;
+    try {
+      await api.setChatModel(slug, provider, modelId);
+    } catch (err: any) {
+      chatError = err.message || 'Could not switch model';
+    } finally {
+      modelSaving = false;
+    }
+  }
+
+  async function send(textOverride?: string) {
+    const msg = (textOverride ?? input).trim();
     if (!msg || streaming) return;
 
     chatError = '';
@@ -401,202 +471,644 @@
     </div>
   </div>
 
-  <div class="messages" bind:this={chatContainer} aria-live="polite">
-    {#if messages.length === 0 && !streaming}
-      <p class="empty-hint">{mode === 'knowledge' ? 'Ask the research assistant...' : 'Ask a question about this book...'}</p>
-    {/if}
-
-    {#each messages as msg}
-      <div class="message" class:user={msg.role === 'user'} class:assistant={msg.role === 'assistant'}>
-        <div class="message-role">
-          {msg.role === 'user' ? 'You' : 'AI'}
-          {#if msg.createdAt}
-            <span class="message-time">{formatTime(msg.createdAt)}</span>
-          {/if}
+  <div class="transcript" bind:this={chatContainer} aria-live="polite">
+    <div class="transcript-inner">
+      {#if messages.length === 0 && !streaming}
+        <div class="hero">
+          <h1>
+            {#if mode === 'knowledge'}
+              What should we <em>research</em>?
+            {:else}
+              What should we <em>write</em>?
+            {/if}
+          </h1>
+          <p>
+            {#if mode === 'knowledge'}
+              Ask about the shared knowledge base, connect entries, or send the assistant to fill the gaps.
+            {:else}
+              Ask for a continuation, a rewrite, a critique. The assistant can read the book, check the wiki, and edit chapters.
+            {/if}
+          </p>
+          <div class="suggestions">
+            {#each suggestions as item}
+              <button type="button" class="suggestion" onclick={() => sendSuggestion(item.p)}>
+                <div class="k">{item.k}</div>
+                <div class="t">{item.t}</div>
+                <div class="d">{item.d}</div>
+              </button>
+            {/each}
+          </div>
         </div>
-        {#if msg.role === 'assistant' && msg.thinking}
-          <details class="thinking-section thinking-done">
-            <summary class="thinking-summary">Thought process ({msg.thinking.length} chars)</summary>
-            <pre class="thinking-text">{msg.thinking}</pre>
-          </details>
-        {/if}
-        {#if msg.role === 'assistant'}
-          <div class="message-text markdown">{@html renderMarkdown(msg.text)}</div>
-          <button class="copy-btn" onclick={() => copyMessage(msg.text)} title="Copy message">
-            {copiedText === msg.text ? 'Copied' : 'Copy'}
-          </button>
-        {:else}
-          <div class="message-text">{msg.text}</div>
-        {/if}
-      </div>
-    {/each}
+      {/if}
 
-    {#if streaming && thinkingText}
-      <div class="message assistant">
-        <div class="message-role">AI</div>
-        <details class="thinking-section" open>
-          <summary class="thinking-summary">
-            <span class="thinking-spinner"></span>
-            Thinking...
-          </summary>
-          <pre class="thinking-text">{thinkingText}</pre>
-        </details>
-      </div>
-    {/if}
-
-    {#if streaming && (completedTools.length > 0 || activeTools.length > 0)}
-      <div class="message assistant">
-        <div class="message-role">AI</div>
-        {#each completedTools as tool (tool.id)}
-          {@const activity = describeToolActivity(tool.name, tool.args)}
-          <div class="tool-block completed" class:error={tool.isError}>
-            <div class="tool-header">
-              <span class="tool-icon">{activity.icon}</span>
-              <span class="tool-label">{activity.label}</span>
-              <span class="tool-status">✓</span>
+      {#each messages as msg}
+        {#if msg.role === 'user'}
+          <div class="msg-user">
+            <div class="author">
+              You
+              {#if msg.createdAt}<span class="when">{formatTime(msg.createdAt)}</span>{/if}
             </div>
-            {#if tool.result}
-              <details>
-                <summary>Result</summary>
-                <pre class="tool-result">{tool.result}</pre>
+            <div class="body">{msg.text}</div>
+          </div>
+        {:else}
+          <div class="msg-assistant">
+            {#if msg.thinking}
+              <details class="thinking">
+                <summary>thinking</summary>
+                <pre>{msg.thinking}</pre>
               </details>
             {/if}
+            <div class="prose markdown">{@html renderMarkdown(msg.text)}</div>
+            <button class="copy-btn" onclick={() => copyMessage(msg.text)} title="Copy message">
+              {copiedText === msg.text ? 'Copied' : 'Copy'}
+            </button>
           </div>
-        {/each}
-        {#each activeTools as tool (tool.id)}
-          {@const activity = describeToolActivity(tool.name, tool.args)}
-          <div class="tool-block active">
-            <div class="tool-header">
-              <span class="tool-icon spinning">{activity.icon}</span>
-              <span class="tool-label">{activity.label}</span>
-              <span class="tool-status"><span class="spinner"></span></span>
+        {/if}
+      {/each}
+
+      {#if streaming && (completedTools.length > 0 || activeTools.length > 0)}
+        <div class="msg-assistant">
+          {#each completedTools as tool (tool.id)}
+            {@const activity = describeToolActivity(tool.name, tool.args)}
+            <details class="proc">
+              <summary class="proc-head">
+                <span class="st ok">✓</span>
+                <span class="name">{tool.name}</span>
+                <span class="arg">{activity.label}</span>
+                <span class="chev">▾</span>
+              </summary>
+              {#if tool.result}
+                <div class="proc-body"><pre>{tool.result}</pre></div>
+              {/if}
+            </details>
+          {/each}
+          {#each activeTools as tool (tool.id)}
+            {@const activity = describeToolActivity(tool.name, tool.args)}
+            <div class="proc running">
+              <div class="proc-head">
+                <span class="st run">●</span>
+                <span class="name">{tool.name}</span>
+                <span class="arg">{activity.label}</span>
+              </div>
             </div>
-          </div>
-        {/each}
-      </div>
-    {/if}
+          {/each}
+        </div>
+      {/if}
 
-    {#if streaming && displayResponse}
-      <div class="message assistant">
-        <div class="message-role">AI</div>
-        <div class="message-text markdown">{@html renderMarkdown(displayResponse)}<span class="cursor">|</span></div>
-      </div>
-    {/if}
+      {#if streaming && displayResponse}
+        <div class="msg-assistant">
+          <div class="prose markdown">{@html renderMarkdown(displayResponse)}<span class="cursor-blink"></span></div>
+        </div>
+      {/if}
 
-    {#if chatError}
-      <div class="chat-error">{chatError}</div>
-    {/if}
-  </div>
-
-  <form class="input-form" onsubmit={(e) => { e.preventDefault(); send(); }}>
-    <textarea
-      bind:this={textareaEl}
-      bind:value={input}
-      placeholder={mode === 'knowledge' ? 'Ask the research assistant...' : 'Ask about the book...'}
-      disabled={streaming}
-      onkeydown={handleKeydown}
-      oninput={autoResize}
-      rows="4"
-    ></textarea>
-    <div class="input-actions">
-      <button type="submit" class="btn btn-send" disabled={streaming || !input.trim()}>
-        <Icon name="send" size={16} /> Send
-      </button>
-      {#if streaming}
-        <button type="button" class="btn btn-stop" onclick={stop} title="Stops the response and resets the conversation context">
-          <Icon name="close" size={14} /> Stop
-        </button>
-      {:else if mode === 'book' && messages.length > 0}
-        <button type="button" class="btn btn-retry" onclick={retry}>
-          <Icon name="refresh" size={14} /> Retry
-        </button>
+      {#if chatError}
+        <div class="notice error">⚠ {chatError}</div>
       {/if}
     </div>
-  </form>
+  </div>
+
+  <div class="composer-wrap">
+    <div class="status-line">
+      {#if streaming}<span class="live">● working</span>{/if}
+      {#if modelSaving}<span>switching model…</span>{/if}
+    </div>
+    <form class="composer" onsubmit={(e) => { e.preventDefault(); send(); }}>
+      <textarea
+        bind:this={textareaEl}
+        bind:value={input}
+        placeholder={mode === 'knowledge' ? 'Ask the research assistant…' : 'Ask the assistant to write, edit, or check something…'}
+        disabled={streaming}
+        onkeydown={handleKeydown}
+        oninput={autoResize}
+        rows="1"
+      ></textarea>
+      <div class="bar">
+        {#if mode === 'book' && modelGroups.length > 0}
+          <select
+            class="model-select"
+            bind:value={selectedModel}
+            onchange={changeModel}
+            title="Model for this conversation"
+          >
+            {#if selectedModel && !modelGroups.some(([provider, models]) => models.some((model) => `${provider}/${model.id}` === selectedModel))}
+              <option value={selectedModel}>{selectedModel}</option>
+            {/if}
+            {#each modelGroups as [provider, models]}
+              <optgroup label={provider}>
+                {#each models as model}
+                  <option value={`${provider}/${model.id}`}>{model.name || model.id}</option>
+                {/each}
+              </optgroup>
+            {/each}
+          </select>
+        {/if}
+        <span class="grow"></span>
+        {#if streaming}
+          <button type="button" class="btn" onclick={stop} title="Stop the response">Stop</button>
+        {:else if mode === 'book' && messages.length > 0}
+          <button type="button" class="btn" onclick={retry} title="Retry the last message">Retry</button>
+        {/if}
+        <button type="submit" class="btn primary" disabled={streaming || !input.trim()}>
+          Send ↵
+        </button>
+      </div>
+    </form>
+  </div>
 </div>
 
 <style>
-  .chat-panel { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-  .panel-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 13px 16px; border-bottom: 1px solid var(--border); background: var(--bg-elevated); }
-  .panel-heading { display: flex; align-items: center; gap: 10px; min-width: 0; }
-  .assistant-badge { width: 32px; height: 32px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-  .panel-title { font-size: 15px; line-height: 1.15; }
-  .panel-sub { font-size: 10.5px; color: var(--text-muted); margin-top: 1px; }
-  .session-controls { display: flex; gap: 4px; align-items: center; }
-  .icon-btn { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border: none; background: transparent; color: var(--text-secondary); border-radius: 8px; }
-  .icon-btn:hover { background: var(--bg-secondary); color: var(--text-primary); }
-  .messages { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 16px 8px; display: flex; flex-direction: column; gap: 14px; }
-  .empty-hint { color: var(--text-muted); font-size: 13px; text-align: center; padding-top: 28px; }
-  .message { font-size: 14px; line-height: 1.65; }
-  .message.user { align-self: flex-end; max-width: 88%; background: var(--accent-soft); border-radius: 16px 16px 4px 16px; padding: 10px 14px; }
-  .message.assistant { align-self: stretch; max-width: 100%; background: transparent; padding: 0; }
-  .message-role { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 5px; text-transform: uppercase; }
-  .message.user .message-role { color: var(--accent); }
-  .message-time { font-weight: 400; opacity: 0.7; margin-left: 6px; font-size: 9.5px; letter-spacing: 0; text-transform: none; }
-  .copy-btn { margin-top: 6px; background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 10.5px; padding: 2px 0; }
-  .copy-btn:hover { color: var(--accent); }
-  .message-text { white-space: pre-wrap; word-break: break-word; }
-  .thinking-section { margin-top: 4px; }
-  .thinking-summary { display: flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 12px; cursor: pointer; }
-  .thinking-spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .thinking-text { margin-top: 8px; padding: 8px; background: rgba(60, 45, 30, 0.08); border-radius: 4px; font-size: 11px; color: var(--text-secondary); max-height: 200px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; }
-  .tool-block { margin: 6px 0; padding: 6px 10px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 6px; font-size: 12px; color: var(--text-secondary); }
-  .tool-block.active { border-color: var(--accent); }
-  .tool-block.error { border-color: var(--error); }
-  .tool-header { display: flex; align-items: center; gap: 6px; }
-  .tool-label { flex: 1; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .tool-status { font-size: 11px; }
-  .tool-result { margin-top: 6px; padding: 6px; background: var(--bg-primary); border-radius: 4px; max-height: 120px; overflow-y: auto; white-space: pre-wrap; font-size: 11px; }
-  .spinner { display: inline-block; width: 10px; height: 10px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
-  .cursor { animation: blink 1s step-end infinite; }
+
+  .chat-panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    background: var(--bg-primary);
+  }
+
+  .panel-header {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 13px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-elevated);
+  }
+
+  .panel-heading {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .assistant-badge {
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .panel-title {
+    font-size: 15px;
+    line-height: 1.15;
+  }
+
+  .panel-sub {
+    font-size: 10.5px;
+    color: var(--text-muted);
+    margin-top: 1px;
+  }
+
+  .session-controls {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+  }
+
+  .icon-btn {
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    border-radius: 8px;
+  }
+
+  .icon-btn:hover {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+  }
+
+  .transcript {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 22px 18px 32px;
+  }
+
+  .transcript-inner {
+    max-width: 760px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .hero {
+    margin: 4vh auto 0;
+    max-width: 620px;
+  }
+
+  .hero h1 {
+    font-family: var(--font-serif);
+    font-size: clamp(28px, 6vw, 42px);
+    line-height: 1.08;
+    letter-spacing: -0.02em;
+    color: var(--text-primary);
+  }
+
+  .hero h1 em {
+    color: var(--accent);
+    font-style: italic;
+  }
+
+  .hero p {
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 1.65;
+    margin-top: 9px;
+  }
+
+  .suggestions {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: 10px;
+    margin-top: 18px;
+  }
+
+  .suggestion {
+    text-align: left;
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    border-radius: 12px;
+    padding: 12px 13px;
+    transition: transform 0.12s, border-color 0.12s, box-shadow 0.12s;
+  }
+
+  .suggestion:hover {
+    transform: translateY(-2px);
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .suggestion .k {
+    font-size: 18px;
+    line-height: 1;
+  }
+
+  .suggestion .t {
+    font-weight: 600;
+    font-size: 13.5px;
+    margin-top: 5px;
+  }
+
+  .suggestion .d {
+    font-size: 11.5px;
+    color: var(--text-secondary);
+    margin-top: 1px;
+  }
+
+  .msg-user {
+    padding: 2px 0 2px 14px;
+    border-left: 3px solid var(--accent);
+  }
+
+  .msg-user .author {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 3px;
+  }
+
+  .msg-user .when {
+    margin-left: 6px;
+    font-weight: 400;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--text-muted);
+  }
+
+  .msg-user .body {
+    font-size: 15.5px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .msg-assistant {
+    min-width: 0;
+  }
+
+  .msg-assistant .prose {
+    font-size: 14.5px;
+    line-height: 1.68;
+    color: var(--text-primary);
+    overflow-wrap: anywhere;
+  }
+
+  .prose > :first-child { margin-top: 0; }
+  .prose > :last-child { margin-bottom: 0; }
+  .prose p { margin: 0.55em 0; }
+  .prose h1, .prose h2, .prose h3 {
+    font-family: var(--font-serif);
+    line-height: 1.2;
+    margin: 1.1em 0 0.4em;
+  }
+  .prose h1 { font-size: 1.5em; }
+  .prose h2 { font-size: 1.3em; }
+  .prose h3 { font-size: 1.1em; }
+  .prose ul, .prose ol { padding-left: 1.3em; margin: 0.4em 0; }
+  .prose li { margin: 0.2em 0; }
+  .prose code {
+    font-family: var(--font-mono);
+    font-size: 0.86em;
+    background: var(--bg-secondary);
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+  .prose pre {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    padding: 12px 14px;
+    border-radius: 8px;
+    overflow-x: auto;
+    margin: 0.6em 0;
+    font-size: 12.5px;
+    line-height: 1.5;
+  }
+  .prose pre code { background: none; padding: 0; font-size: inherit; }
+  .prose a { color: var(--accent); text-underline-offset: 2px; }
+  .prose blockquote {
+    margin: 0.6em 0;
+    padding-left: 12px;
+    border-left: 3px solid var(--border-strong);
+    color: var(--text-secondary);
+  }
+  .prose table {
+    border-collapse: collapse;
+    font-size: 13px;
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+  .prose th, .prose td { border: 1px solid var(--border); padding: 4px 10px; }
+  .prose th { background: var(--bg-secondary); }
+  .prose hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+  .prose strong { font-weight: 600; }
+
+  .thinking {
+    font-size: 12px;
+    color: var(--text-secondary);
+    border-left: 2px dashed var(--border-strong);
+    padding: 2px 0 2px 10px;
+    margin: 6px 0;
+    max-height: 180px;
+    overflow: auto;
+  }
+
+  .thinking summary {
+    cursor: pointer;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .thinking pre {
+    margin: 6px 0 0;
+    white-space: pre-wrap;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.5;
+  }
+
+  .copy-btn {
+    margin-top: 5px;
+    background: none;
+    border: none;
+    padding: 2px 0;
+    color: var(--text-muted);
+    font-size: 10.5px;
+    cursor: pointer;
+  }
+
+  .copy-btn:hover {
+    color: var(--accent);
+  }
+
+  .cursor-blink::after {
+    content: '▍';
+    color: var(--accent);
+    animation: blink 1s steps(2) infinite;
+    margin-left: 1px;
+  }
+
   @keyframes blink { 50% { opacity: 0; } }
-  .chat-error { background: var(--error-bg); color: var(--error); padding: 8px 12px; border-radius: 6px; font-size: 12px; }
-  .message-text.markdown :global(p) { margin: 0 0 8px; }
-  .message-text.markdown :global(p:last-child) { margin-bottom: 0; }
-  .message-text.markdown :global(h1) { font-size: 1.4em; font-weight: 700; margin: 12px 0 8px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
-  .message-text.markdown :global(h2) { font-size: 1.2em; font-weight: 600; margin: 10px 0 6px; }
-  .message-text.markdown :global(h3) { font-size: 1.1em; font-weight: 600; margin: 8px 0 4px; }
-  .message-text.markdown :global(ul), .message-text.markdown :global(ol) { margin: 4px 0; padding-left: 20px; }
-  .message-text.markdown :global(li) { margin: 2px 0; }
-  .message-text.markdown :global(code) { background: rgba(60, 45, 30, 0.12); padding: 1px 5px; border-radius: 3px; font-size: 0.9em; font-family: Consolas, Monaco, monospace; }
-  .message-text.markdown :global(pre) { background: rgba(60, 45, 30, 0.12); padding: 10px 12px; border-radius: 6px; overflow-x: auto; margin: 8px 0; }
-  .message-text.markdown :global(pre code) { background: none; padding: 0; font-size: 0.85em; }
-  .message-text.markdown :global(blockquote) { border-left: 3px solid var(--accent); padding-left: 12px; margin: 8px 0; color: var(--text-secondary); }
-  .message-text.markdown :global(strong) { font-weight: 600; }
-  .message-text.markdown :global(a) { color: var(--accent); text-decoration: underline; }
-  .message-text.markdown :global(hr) { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
-  .input-form { flex-shrink: 0; display: flex; align-items: flex-end; gap: 10px; padding: 14px 16px calc(14px + env(safe-area-inset-bottom)); border-top: 1px solid var(--border); background: var(--bg-elevated); }
-  .input-form textarea { flex: 1; min-height: 104px; padding: 12px 14px; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 14px; color: var(--text-primary); font-size: 15px; line-height: 1.55; resize: none; font-family: inherit; }
-  .input-form textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 0 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-elevated); color: var(--text-primary); cursor: pointer; font-size: 13.5px; font-weight: 500; }
-  .btn-send { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .btn-send:hover:not(:disabled) { background: var(--accent-hover); }
-  .btn-stop { border-color: var(--error); color: var(--error); }
-  .btn-stop:hover { background: var(--error-bg); }
-  .btn-retry { color: var(--text-secondary); }
-  .btn-retry:hover { color: var(--accent); border-color: var(--accent); }
-  .input-actions { display: flex; flex-shrink: 0; gap: 6px; }
-  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+  .proc {
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    border-radius: 9px;
+    overflow: hidden;
+    margin: 6px 0;
+    font-size: 12.5px;
+  }
+
+  .proc-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+  }
+
+  .proc-head::-webkit-details-marker { display: none; }
+
+  .proc-head:hover {
+    background: var(--bg-secondary);
+  }
+
+  .proc-head .st {
+    width: 14px;
+    text-align: center;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+
+  .proc-head .st.ok { color: var(--success); }
+  .proc-head .st.run {
+    color: var(--accent);
+    animation: pulse 1s ease-in-out infinite alternate;
+  }
+
+  @keyframes pulse { from { opacity: 0.35; } }
+
+  .proc-head .name {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    font-weight: 600;
+  }
+
+  .proc-head .arg {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .proc-head .chev {
+    font-size: 10px;
+    color: var(--text-muted);
+  }
+
+  .proc-body {
+    border-top: 1px solid var(--border);
+    background: var(--bg-primary);
+  }
+
+  .proc-body pre {
+    margin: 0;
+    padding: 10px 11px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 280px;
+    overflow: auto;
+  }
+
+  .notice {
+    align-self: center;
+    font-size: 11.5px;
+    color: var(--text-secondary);
+    background: var(--bg-secondary);
+    padding: 5px 12px;
+    border-radius: 99px;
+    max-width: 90%;
+    text-align: center;
+  }
+
+  .notice.error {
+    color: var(--error);
+    background: var(--error-bg);
+  }
+
+  .composer-wrap {
+    flex-shrink: 0;
+    padding: 0 16px 16px;
+  }
+
+  .status-line {
+    max-width: 760px;
+    margin: 0 auto 6px;
+    min-height: 16px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .status-line .live { color: var(--accent); }
+
+  .composer {
+    max-width: 760px;
+    margin: 0 auto;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-strong);
+    border-radius: 14px;
+    box-shadow: var(--shadow-sm);
+    transition: border-color 0.15s;
+  }
+
+  .composer:focus-within {
+    border-color: var(--accent);
+  }
+
+  .composer textarea {
+    width: 100%;
+    border: 0;
+    outline: none;
+    resize: none;
+    padding: 12px 14px 4px;
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 15px;
+    line-height: 1.5;
+    min-height: 44px;
+    max-height: 260px;
+    overflow-y: auto;
+  }
+
+  .composer .bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px 8px 10px;
+  }
+
+  .model-select {
+    max-width: 220px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    font-size: 11.5px;
+    padding: 4px 6px;
+  }
+
+  .grow { flex: 1; }
+
+  .composer .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 34px;
+    padding: 0 13px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 12.5px;
+    font-weight: 500;
+  }
+
+  .composer .btn:hover:not(:disabled) {
+    border-color: var(--border-strong);
+  }
+
+  .composer .btn.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+
+  .composer .btn.primary:hover:not(:disabled) {
+    background: var(--accent-hover);
+  }
+
+  .composer .btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
 
   @media (max-width: 600px) {
-    .input-form {
-      flex-direction: column;
-      align-items: stretch;
-      padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
-    }
-
-    .input-form textarea {
-      min-height: 128px;
-      font-size: 16px;
-    }
-
-    .input-actions {
-      justify-content: flex-end;
-    }
-
-    .input-actions .btn {
-      flex: 1;
-    }
+    .transcript { padding: 16px 12px 24px; }
+    .composer-wrap { padding: 0 12px 12px; }
+    .model-select { max-width: 150px; }
+    .hero h1 { font-size: 30px; }
+    .suggestions { grid-template-columns: 1fr; }
   }
 </style>

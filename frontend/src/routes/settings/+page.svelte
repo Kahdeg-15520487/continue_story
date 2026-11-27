@@ -43,6 +43,20 @@
   let modelFilter = $state('');
   let manualModel = $state('');
 
+  let providerFilter = $state('');
+  let keyFor = $state<string | null>(null);
+  let keyValue = $state('');
+  let keySaving = $state(false);
+  let keyError = $state('');
+
+  let filteredProviders = $derived.by(() => {
+    const q = providerFilter.trim().toLowerCase();
+    const list = settings?.providers ?? [];
+    return (q ? list.filter((p) => p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q)) : list)
+      .slice()
+      .sort((a, b) => Number(b.configured) - Number(a.configured) || a.name.localeCompare(b.name));
+  });
+
   let filteredDiscovered = $derived.by(() => {
     const q = modelFilter.trim().toLowerCase();
     if (!q) return discovered;
@@ -246,6 +260,35 @@
     await saveDefault();
   }
 
+  function toggleKey(id: string) {
+    keyFor = keyFor === id ? null : id;
+    keyValue = '';
+    keyError = '';
+  }
+
+  async function saveKey(id: string) {
+    const provider = settings?.providers.find((p) => p.id === id);
+    if (!provider || !keyValue.trim()) return;
+    keySaving = true;
+    keyError = '';
+    try {
+      await api.saveLlmProvider({
+        id,
+        name: provider.name,
+        kind: provider.kind,
+        baseUrl: provider.baseUrl ?? undefined,
+        apiKey: keyValue.trim(),
+      });
+      keyFor = null;
+      keyValue = '';
+      await load();
+    } catch (err: any) {
+      keyError = err.message || 'Failed to save key';
+    } finally {
+      keySaving = false;
+    }
+  }
+
   async function saveDefault() {
     savingDefault = true;
     error = '';
@@ -398,46 +441,76 @@
           </div>
         {/if}
 
-        <div class="provider-grid">
-          {#each settings.providers as provider (provider.id)}
-            <article class="provider-card">
-              <div class="provider-top">
-                <div class="provider-title">
+        <div class="provider-tools">
+          <input class="provider-filter" bind:value={providerFilter} placeholder="Filter providers…" />
+          <span class="muted">{filteredProviders.length} provider{filteredProviders.length === 1 ? '' : 's'}</span>
+        </div>
+
+        <div class="provider-list">
+          {#each filteredProviders as provider (provider.id)}
+            <div class="provider-row">
+              <div class="provider-main">
+                <div class="provider-name-line">
                   <span class="provider-name">{provider.name}</span>
-                  <span class="chip">{provider.kind}</span>
+                  <span class="mono muted small">{provider.id} · {provider.models.length} model{provider.models.length === 1 ? '' : 's'}</span>
+                  {#if provider.keyLast4}<span class="mono muted small">key …{provider.keyLast4}</span>{/if}
                 </div>
-                <span class:ok={provider.configured} class:off={!provider.configured} class="status">
-                  {provider.configured ? 'configured' : 'no key'}
-                </span>
+                {#if provider.baseUrl}
+                  <div class="mono muted small truncate">{provider.baseUrl}</div>
+                {/if}
+                {#if testResults[provider.id]}
+                  <div class:ok={testResults[provider.id].ok} class:error={!testResults[provider.id].ok} class="test-result">
+                    {#if testResults[provider.id].ok}
+                      Connected — response: “{testResults[provider.id].sample || 'OK'}”
+                    {:else}
+                      {testResults[provider.id].error || 'Test failed'}
+                    {/if}
+                  </div>
+                {/if}
               </div>
-              <div class="provider-meta">
-                <span>{provider.models.length} model{provider.models.length === 1 ? '' : 's'}</span>
-                {#if provider.keyLast4}<span>key …{provider.keyLast4}</span>{/if}
-                {#if provider.baseUrl}<span class="truncate">{provider.baseUrl}</span>{/if}
-              </div>
+
+              <span class:ok={provider.configured} class:off={!provider.configured} class="status-pill">
+                {provider.configured ? 'ready' : 'not set'}
+              </span>
+
               <div class="provider-actions">
-                <button class="btn" onclick={() => test(provider)} disabled={testingId === provider.id}>
+                <button class="btn small" onclick={() => test(provider)} disabled={testingId === provider.id}>
                   {testingId === provider.id ? 'Testing…' : 'Test'}
                 </button>
-                <button class="btn" onclick={() => useProvider(provider)} disabled={provider.models.length === 0}>Use</button>
-                <button class="btn" onclick={() => startEdit(provider)}>Edit</button>
-                <button class="btn danger" onclick={() => removeProvider(provider)}>Delete</button>
+                <button class="btn small" onclick={() => useProvider(provider)} disabled={provider.models.length === 0}>Use</button>
+                <button class="btn small" onclick={() => startEdit(provider)}>Models</button>
+                <button class="btn small" onclick={() => toggleKey(provider.id)}>
+                  {keyFor === provider.id ? 'Cancel' : provider.configured ? 'Change key' : 'Add key'}
+                </button>
+                <button class="btn small danger" onclick={() => removeProvider(provider)}>Delete</button>
               </div>
-              {#if testResults[provider.id]}
-                <div class:ok={testResults[provider.id].ok} class:error={!testResults[provider.id].ok} class="test-result">
-                  {#if testResults[provider.id].ok}
-                    Connected — response: “{testResults[provider.id].sample || 'OK'}”
-                  {:else}
-                    {testResults[provider.id].error || 'Test failed'}
-                  {/if}
-                </div>
+
+              {#if keyFor === provider.id}
+                <form
+                  class="key-row"
+                  onsubmit={(e) => { e.preventDefault(); saveKey(provider.id); }}
+                >
+                  <input
+                    type="password"
+                    bind:value={keyValue}
+                    placeholder="API key"
+                    autocomplete="off"
+                    autofocus
+                  />
+                  <button class="btn primary small" type="submit" disabled={keySaving || !keyValue.trim()}>
+                    {keySaving ? 'Saving…' : 'Save key'}
+                  </button>
+                  {#if keyError}<span class="field-error">{keyError}</span>{/if}
+                </form>
               {/if}
-            </article>
+            </div>
           {/each}
-          {#if settings.providers.length === 0}
-            <p class="empty">No providers yet. Add one, or set an environment key.</p>
+
+          {#if filteredProviders.length === 0}
+            <p class="empty">{settings.providers.length === 0 ? 'No providers yet. Add one, or set an environment key.' : 'No providers match this filter.'}</p>
           {/if}
         </div>
+
       </section>
 
       <section class="card">
@@ -1018,5 +1091,124 @@
     margin: 2px 0 6px;
     color: var(--error);
     font-size: 12px;
+  }
+
+  .provider-tools {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 12px 0 8px;
+  }
+
+  .provider-filter {
+    flex: 1;
+    height: 38px;
+    padding: 0 11px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-elevated);
+    font-size: 13px;
+  }
+
+  .provider-list {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--bg-elevated);
+    overflow: hidden;
+  }
+
+  .provider-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 11px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .provider-row:last-child {
+    border-bottom: none;
+  }
+
+  .provider-main {
+    flex: 1;
+    min-width: 180px;
+  }
+
+  .provider-name-line {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .provider-name {
+    font-weight: 600;
+    font-size: 14px;
+  }
+
+  .mono {
+    font-family: var(--font-mono);
+  }
+
+  .small {
+    font-size: 11.5px;
+  }
+
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 9px;
+    border-radius: 99px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    background: var(--bg-secondary);
+    color: var(--text-muted);
+  }
+
+  .status-pill.ok {
+    background: var(--success-bg);
+    color: var(--success);
+  }
+
+  .provider-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .btn.small {
+    height: 30px;
+    padding: 0 10px;
+    font-size: 12px;
+  }
+
+  .key-row {
+    flex-basis: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding-top: 4px;
+  }
+
+  .key-row input {
+    flex: 1;
+    min-width: 200px;
+    height: 34px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-primary);
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+  }
+
+  .provider-list .empty {
+    padding: 24px;
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 13px;
   }
 </style>

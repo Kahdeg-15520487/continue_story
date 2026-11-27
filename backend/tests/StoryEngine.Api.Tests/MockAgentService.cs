@@ -86,6 +86,12 @@ public class MockAgentService : IAgentService
         return Task.FromResult("{\"items\":[],\"next\":null}");
     }
 
+    public Task<AgentResponse> GetConversationAsync(string sessionId, CancellationToken ct = default) =>
+        Task.FromResult(new AgentResponse(200, "{\"agent\":{\"model\":{\"provider\":\"deepseek\",\"modelId\":\"deepseek-flash\"}}}"));
+
+    public Task<AgentResponse> ConfigureConversationAsync(string sessionId, string json, CancellationToken ct = default) =>
+        Task.FromResult(new AgentResponse(200, "{\"configured\":true}"));
+
     public Task<AgentResponse> DiscoverModelsAsync(string json, CancellationToken ct = default) =>
         Task.FromResult(new AgentResponse(200, "{\"models\":[]}"));
 

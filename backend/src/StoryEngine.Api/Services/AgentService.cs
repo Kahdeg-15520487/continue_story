@@ -244,6 +244,12 @@ public class AgentService : IAgentService
     public Task<AgentResponse> GetLlmSettingsAsync(CancellationToken ct = default) =>
         SendAsync(HttpMethod.Get, "/api/settings/llm", null, ct);
 
+    public Task<AgentResponse> GetConversationAsync(string sessionId, CancellationToken ct = default) =>
+        SendAsync(HttpMethod.Get, $"/api/conversations/{sessionId}", null, ct);
+
+    public Task<AgentResponse> ConfigureConversationAsync(string sessionId, string json, CancellationToken ct = default) =>
+        SendAsync(HttpMethod.Post, $"/api/conversations/{sessionId}/configure", json, ct);
+
     public Task<AgentResponse> DiscoverModelsAsync(string json, CancellationToken ct = default) =>
         SendAsync(HttpMethod.Post, "/api/settings/llm/discover", json, ct);
 
